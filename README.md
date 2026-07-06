@@ -81,7 +81,7 @@ shopify-cro-engine/
 ## 🚀 Local Setup
 
 ### Prerequisites
-- Node.js (v18 or higher)
+- Node.js (v22 LTS or higher)
 - An OpenRouter API Key
 
 ### Installation
@@ -122,7 +122,7 @@ This project is configured for **Single-Service Deployment** on platforms like R
 **Render Configuration:**
 - **Build Command:**
   ```bash
-  npm install && npm run build
+  npm install --include=dev && npm run build
   ```
 - **Start Command:**
   ```bash
