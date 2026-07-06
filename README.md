@@ -122,18 +122,22 @@ This project is configured for **Single-Service Deployment** on platforms like R
 **Render Configuration:**
 - **Build Command:**
   ```bash
-  npm install --include=dev && npm run build
+  npm run build
   ```
+  *(This runs `npm install --prefix frontend && npm run build --prefix frontend` — installs Vite + dependencies in an isolated `frontend/node_modules` and builds the React app.)*
 - **Start Command:**
   ```bash
-  npm start
+  node --max-old-space-size=400 backend/src/server.js
   ```
+  *(Before starting, ensure backend dependencies are installed as a pre-deploy step or via `npm install --prefix backend --omit=dev`.)*
 - **Environment Variables:**
   - `NODE_ENV`: `production`
   - `OPENROUTER_API_KEY`: `your_key_here`
+  - `OPENROUTER_MODEL`: `openai/gpt-4o-mini`
+  - `OPENROUTER_BASE_URL`: `https://openrouter.ai/api/v1`
 
 **How it works:** 
-During the build phase, NPM Workspaces compiles the frontend into `frontend/dist`. During runtime, the Express backend automatically detects `NODE_ENV=production` and serves the static files dynamically.
+During the build phase, the `build` script installs frontend dependencies in isolation (`frontend/node_modules`), ensuring Vite resolves the correct Linux native binaries. The Express backend then serves the compiled `frontend/dist` at runtime.
 
 ---
 
