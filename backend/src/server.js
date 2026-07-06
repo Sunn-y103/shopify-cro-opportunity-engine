@@ -4,10 +4,11 @@ import './env.js';
 import app from './app.js';
 
 const PORT = process.env.PORT || 5000;
+const HOST = '0.0.0.0'; // Required for Render: bind to all interfaces, not just localhost
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server running in ${NODE_ENV} mode on port ${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 Server running in ${NODE_ENV} mode on ${HOST}:${PORT}`);
   console.log(`   Heap limit: ${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)} MB`);
 });
 

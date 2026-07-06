@@ -62,7 +62,7 @@ export async function callOpenRouter(systemPrompt, userPrompt, label = 'OpenRout
   console.log(`\n┌─ ${label} Request ${'─'.repeat(Math.max(0, 43 - label.length))}`);
   console.log(`│ Model           : ${model}`);
   console.log(`│ Prompt len      : ${promptLength} chars`);
-  console.log(`│ API Key         : ${apiKey ? apiKey.slice(0, 10) + '...' : '⚠️  MISSING'}`);
+  console.log(`│ API Key         : ${apiKey ? '✅ set' : '❌ MISSING'}`);
   console.log(`└${'─'.repeat(50)}`);
 
   if (!apiKey) {
