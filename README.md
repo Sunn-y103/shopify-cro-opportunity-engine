@@ -1,12 +1,10 @@
 # Shopify CRO Engine
 
-<div align="center">
-  <p><strong>AI-Powered Conversion Rate Optimization for Shopify Stores</strong></p>
-  <p>An enterprise-grade analysis engine that crawls Shopify websites and leverages Google Gemini AI to generate actionable, data-driven CRO insights and A/B test briefs.</p>
-</div>
+AI-powered Conversion Rate Optimization tool for Shopify stores.
+
+This project analyzes Shopify websites by crawling store data and using Google Gemini AI to generate actionable CRO insights, performance issues, and A/B test recommendations.
 
 ---
-
 ## 🎯 Overview
 
 The **Shopify CRO Engine** automates the traditionally manual process of Conversion Rate Optimization auditing. By analyzing the core pages of any Shopify store (Homepage, Collections, Product Pages, and Cart), the engine evaluates trust signals, user experience, and merchandising effectiveness.
