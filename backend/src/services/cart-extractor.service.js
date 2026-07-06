@@ -15,44 +15,44 @@ export class CartExtractorService {
    * @param {string} baseUrl - The base URL of the Shopify store.
    * @returns {Promise<object>} Extracted cart features in JSON format.
    */
-  static async extract(baseUrl) {
+  static async extract(baseUrl, homeHtml = '') {
     try {
       const cartUrl = new URL('/cart', baseUrl).href;
 
-      const [cartPageResult, homePageResult] = await Promise.allSettled([
+      const [cartPageResult] = await Promise.allSettled([
         CrawlerService.crawl(cartUrl),
-        CrawlerService.crawl(baseUrl),
       ]);
 
       let cart$ = null;
       let cartHtml = '';
+      // To save memory, we don't re-crawl or re-parse the homepage into Cheerio.
+      // We rely on string-based detection on homeHtml and the dedicated cart page.
       let home$ = null;
-      let homeHtml = '';
 
       if (cartPageResult.status === 'fulfilled') {
         cart$    = cartPageResult.value.$;
         cartHtml = cartPageResult.value.html || '';
       }
-      if (homePageResult.status === 'fulfilled') {
-        home$    = homePageResult.value.$;
-        homeHtml = homePageResult.value.html || '';
-      }
 
-      const $ = cart$ || home$;
-      if (!$) throw new Error('Failed to retrieve either cart page or homepage.');
-
-      return {
+      const $ = cart$;
+      
+      const result = {
         url:              cartUrl,
         cartType:         this._detectCartType(cart$, home$, cartHtml, homeHtml),
-        couponField:      this._hasCouponField(cart$ || $),
-        shippingEstimator: this._hasShippingEstimator(cart$ || $),
-        freeShippingBanner: this._hasFreeShippingBanner($),
-        upsells:          this._hasRecommendations($, ['upsell', 'frequently bought', 'complete the look', 'bundle']),
-        crossSells:       this._hasRecommendations($, ['cross', 'recommend', 'also like', 'may also']),
-        trustBadges:      this._extractTrustBadges($),
-        paymentMethods:   this._extractPaymentMethods($),
-        expressCheckout:  this._hasExpressCheckout($, homeHtml),
+        couponField:      $ ? this._hasCouponField($) : false,
+        shippingEstimator: $ ? this._hasShippingEstimator($) : false,
+        freeShippingBanner: $ ? this._hasFreeShippingBanner($) : false,
+        upsells:          $ ? this._hasRecommendations($, ['upsell', 'frequently bought', 'complete the look', 'bundle']) : false,
+        crossSells:       $ ? this._hasRecommendations($, ['cross', 'recommend', 'also like', 'may also']) : false,
+        trustBadges:      $ ? this._extractTrustBadges($) : [],
+        paymentMethods:   $ ? this._extractPaymentMethods($) : [],
+        expressCheckout:  $ ? this._hasExpressCheckout($, homeHtml) : false,
       };
+
+      // Clear memory
+      cart$ = null;
+      
+      return result;
 
     } catch (error) {
       throw new Error(`Failed to extract cart data on ${baseUrl}: ${error.message}`);

@@ -82,8 +82,11 @@ export class StoreScraperService {
     const [collectionsResult, productsResult, cartResult] = await Promise.allSettled([
       CollectionExtractorService.extract(targetUrl),
       ProductExtractorService.extract(targetUrl),
-      CartExtractorService.extract(targetUrl)
+      CartExtractorService.extract(targetUrl, homepageResult.html)
     ]);
+    
+    // Clear homepageResult to free memory (garbage collection)
+    homepageResult = null;
 
     // Handle Collections
     if (collectionsResult.status === 'fulfilled') {
@@ -281,12 +284,15 @@ export class StoreScraperService {
     }
 
     const extractedProducts = [];
-    for (const url of Array.from(urls).slice(0, 5)) {
+    for (const url of Array.from(urls).slice(0, 1)) {
       try {
-        const { html, $ } = await CrawlerService.crawl(url);
+        let crawlData = await CrawlerService.crawl(url);
         const { ProductExtractorService } = await import('./product-extractor.service.js');
-        const data = ProductExtractorService._extractProductData($, html, url);
+        const data = ProductExtractorService._extractProductData(crawlData.$, crawlData.html, url);
         extractedProducts.push(data);
+        
+        // Clear memory
+        crawlData = null;
       } catch (err) {
         console.warn(`[Fallback] Failed to crawl product ${url}: ${err.message}`);
       }

@@ -21,10 +21,10 @@ export class CollectionExtractorService {
 
       if (apiCollections.length > 0) {
         console.log(`[Collections] JSON API returned ${apiCollections.length} collections`);
-        // Pick up to 8 non-trivial collections (skip "all" or "frontpage")
+        // Pick up to 1 non-trivial collection to stay under memory limits
         collectionUrls = apiCollections
           .filter(c => c.handle && c.handle !== 'frontpage')
-          .slice(0, 8)
+          .slice(0, 1)
           .map(c => new URL(`/collections/${c.handle}`, baseUrl).href);
       } else {
         // Step 2: Try Sitemap-based discovery (works great for headless/SPAs)
@@ -32,7 +32,7 @@ export class CollectionExtractorService {
         const sitemapData = await CrawlerService.crawlSitemap(baseUrl);
         if (sitemapData.collections && sitemapData.collections.length > 0) {
           console.log(`[Collections] Sitemap discovered ${sitemapData.collections.length} collections`);
-          collectionUrls = sitemapData.collections.slice(0, 8);
+          collectionUrls = sitemapData.collections.slice(0, 1);
         } else {
           // Step 3: Fall back to HTML-based discovery
           console.log('[Collections] Sitemap empty, falling back to HTML homepage discovery');
@@ -50,9 +50,12 @@ export class CollectionExtractorService {
 
       for (const url of collectionUrls) {
         try {
-          const { $: col$ } = await CrawlerService.crawl(url);
-          const data = this._extractCollectionData(col$, url, apiCollections);
+          let crawlData = await CrawlerService.crawl(url);
+          const data = this._extractCollectionData(crawlData.$, url, apiCollections);
           extractedCollections.push(data);
+          
+          // Clear memory
+          crawlData = null;
         } catch (err) {
           console.warn(`[Collections] Failed to crawl ${url}: ${err.message}`);
         }
@@ -92,7 +95,7 @@ export class CollectionExtractorService {
       });
     } catch (_) {}
 
-    return Array.from(urls).slice(0, 8);
+    return Array.from(urls).slice(0, 1);
   }
 
   // ─────────────────────────────────────────────────────────────────

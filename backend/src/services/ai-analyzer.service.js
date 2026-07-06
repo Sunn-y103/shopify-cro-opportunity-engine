@@ -130,11 +130,34 @@ export class AiAnalyzerService {
       },
     };
 
+    // Recursively truncate all strings to 120 chars
+    const truncate = (obj) => {
+      if (typeof obj === 'string') return obj.slice(0, 120);
+      if (Array.isArray(obj)) return obj.map(truncate);
+      if (obj !== null && typeof obj === 'object') {
+        const newObj = {};
+        for (const key in obj) newObj[key] = truncate(obj[key]);
+        return newObj;
+      }
+      return obj;
+    };
+    
+    const cleanD = truncate(d);
+    
+    // Strict payload size limit check (keep it under ~30KB)
+    let payloadString = JSON.stringify(cleanD);
+    if (payloadString.length > 30000) {
+      console.warn(`[AiAnalyzer] Payload size ${payloadString.length} exceeds 30KB. Truncating optional arrays.`);
+      cleanD.productSignals = cleanD.productSignals.slice(0, 1);
+      cleanD.filterLabels = cleanD.filterLabels.slice(0, 3);
+      payloadString = JSON.stringify(cleanD);
+    }
+
     return `Analyze this Shopify store and return a CRO report. Base your analysis ONLY on the actual data provided — do not assume missing features exist. Max 5 opportunities.
 
 IMPORTANT: Return ONLY valid JSON. No markdown. No code fences. No explanations. One JSON object only.
 
-DATA: ${JSON.stringify(d)}
+DATA: ${payloadString}
 
 RETURN THIS EXACT JSON SCHEMA (replace placeholder values, no extra fields):
 {

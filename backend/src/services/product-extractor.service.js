@@ -15,7 +15,7 @@ import { CrawlerService } from './crawler.service.js';
  */
 export class ProductExtractorService {
   /**
-   * Discovers and extracts data from up to 8 product pages.
+   * Discovers and extracts data from up to 2 product pages.
    *
    * @param {string} baseUrl - The base URL of the Shopify store.
    * @returns {Promise<object[]>} Array of extracted product data.
@@ -30,9 +30,12 @@ export class ProductExtractorService {
 
       for (const url of productUrls) {
         try {
-          const { html, $ } = await CrawlerService.crawl(url);
-          const data = this._extractProductData($, html, url);
+          let crawlData = await CrawlerService.crawl(url);
+          const data = this._extractProductData(crawlData.$, crawlData.html, url);
           extractedProducts.push(data);
+          
+          // Clear memory
+          crawlData = null;
         } catch (err) {
           console.warn(`[Products] Failed to crawl ${url}: ${err.message}`);
         }
@@ -66,7 +69,7 @@ export class ProductExtractorService {
     } catch (_) {}
 
     // If we already have enough products from API, return early
-    if (urls.size >= 8) return Array.from(urls).slice(0, 8);
+    if (urls.size >= 2) return Array.from(urls).slice(0, 2);
 
     // Source 2: /collections/all page
     try {
@@ -81,7 +84,7 @@ export class ProductExtractorService {
       console.log(`[Products] /collections/all added ${urls.size} URLs so far`);
     } catch (_) {}
 
-    if (urls.size >= 8) return Array.from(urls).slice(0, 8);
+    if (urls.size >= 2) return Array.from(urls).slice(0, 2);
 
     // Source 3: Homepage scan
     try {
@@ -107,7 +110,7 @@ export class ProductExtractorService {
       }
     } catch (_) {}
 
-    return Array.from(urls).slice(0, 8);
+    return Array.from(urls).slice(0, 2);
   }
 
   // ─────────────────────────────────────────────────────────────────

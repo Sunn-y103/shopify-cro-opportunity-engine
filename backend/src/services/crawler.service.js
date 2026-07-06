@@ -35,7 +35,7 @@ export class CrawlerService {
 
     const axiosOptions = {
       headers: { ...DEFAULT_HEADERS },
-      timeout: 20000, // 20 seconds — real Shopify stores can be slow
+      timeout: 15000, // 15 seconds max (reduced for safety)
       maxRedirects: 5,
       ...options,
     };
@@ -52,7 +52,13 @@ export class CrawlerService {
           throw new Error(`Expected text/html but received ${contentType}`);
         }
 
-        const html = response.data;
+        let html = response.data;
+        
+        // Memory optimization: Trim massive tags before parsing with Cheerio
+        html = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+        html = html.replace(/<svg[^>]*>[\s\S]*?<\/svg>/gi, '');
+        html = html.replace(/<!--[\s\S]*?-->/g, '');
+
         const $ = cheerio.load(html);
 
         // Return the final redirected URL, or fallback to the provided URL
@@ -90,7 +96,7 @@ export class CrawlerService {
           ...DEFAULT_HEADERS,
           'Accept': 'application/json, text/javascript, */*',
         },
-        timeout: 15000,
+        timeout: 10000, // 10 seconds max
         maxRedirects: 5,
       });
 
@@ -139,7 +145,7 @@ export class CrawlerService {
         );
         const crawlList = relevantSitemaps.length > 0 ? relevantSitemaps : urlsToCrawl;
 
-        for (const subUrl of crawlList.slice(0, 5)) {
+        for (const subUrl of crawlList.slice(0, 2)) {
           try {
             const subResponse = await axios.get(subUrl, {
               headers: { ...DEFAULT_HEADERS, 'Accept': 'application/xml, text/xml, */*' },
