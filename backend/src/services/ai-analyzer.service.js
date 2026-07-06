@@ -1,10 +1,10 @@
-import { callGemini } from './gemini-client.js';
+import { callOpenRouter } from './openrouter-client.js';
 
 // ──────────────────────────────────────────────────────────────────
 
 export class AiAnalyzerService {
   /**
-   * Generates a CRO report by analyzing structured store data via Gemini.
+   * Generates a CRO report by analyzing structured store data via OpenRouter.
    *
    * @param {object} storeData - The normalized JSON from StoreScraperService.
    * @returns {Promise<object>} Structured JSON CRO report.
@@ -13,7 +13,8 @@ export class AiAnalyzerService {
     const systemPrompt = [
       'You are a Shopify CRO consultant.',
       'You MUST return ONLY valid JSON.',
-      'Do not include markdown, code fences, explanations, or surrounding text.',
+      'Do not include markdown. Do not include code fences. Do not include explanations.',
+      'Do not omit commas or braces.',
       'Return exactly one JSON object.',
       'All string values must be 120 characters or fewer.',
       'CRITICAL TRUTHFULNESS INSTRUCTION:',
@@ -39,7 +40,7 @@ export class AiAnalyzerService {
     const userPrompt = this._buildPrompt(storeData);
 
     try {
-      const result = await callGemini(systemPrompt, userPrompt, 'analyze');
+      const result = await callOpenRouter(systemPrompt, userPrompt, 'analyze');
       if (result && Array.isArray(result.opportunities)) {
         result.opportunities = result.opportunities.map(opp => ({
           ...opp,

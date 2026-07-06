@@ -125,14 +125,18 @@ export class ProductExtractorService {
     const priceText       = this._extractPrice($, jsonLdProduct, scriptJson);
     const compareAtText   = this._extractCompareAtPrice($, scriptJson);
 
+    // Extract images once — reuse the array for both `images` and `imageCount`.
+    // Previously _extractImages() was called twice (one DOM traversal per call).
+    const images = this._extractImages($, jsonLdProduct);
+
     return {
       url,
       name:           this._extractName($, jsonLdProduct, scriptJson),
       price:          priceText,
       compareAtPrice: compareAtText,
       discount:       this._calculateDiscount(priceText, compareAtText),
-      images:         this._extractImages($, jsonLdProduct),
-      imageCount:     this._extractImages($, jsonLdProduct).length,
+      images,
+      imageCount:     images.length,
       videos:         this._extractVideos($),
       variants:       this._extractVariants($, scriptJson),
       sizes:          this._extractSizes($, scriptJson),
@@ -149,6 +153,7 @@ export class ProductExtractorService {
       relatedProducts: this._extractRelatedProducts($),
     };
   }
+
 
   // ─────────────────────────────────────────────────────────────────
   // JSON-LD Product extraction

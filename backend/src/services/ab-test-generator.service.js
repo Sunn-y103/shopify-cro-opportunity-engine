@@ -1,4 +1,4 @@
-import { callGemini } from './gemini-client.js';
+import { callOpenRouter } from './openrouter-client.js';
 
 export class AbTestGeneratorService {
   /**
@@ -20,9 +20,8 @@ export class AbTestGeneratorService {
     const systemPrompt = [
       'You are a Shopify CRO experiment designer.',
       'You MUST return ONLY valid JSON.',
-      'Do not include markdown.',
-      'Do not include code fences.',
-      'Do not include explanations.',
+      'Do not include markdown. Do not include code fences. Do not include explanations.',
+      'Do not omit commas or braces.',
       'Return exactly one JSON object.',
       'All string values must be 120 characters or fewer.',
     ].join(' ');
@@ -30,7 +29,7 @@ export class AbTestGeneratorService {
     const userPrompt = this._buildPrompt(topOpportunities);
 
     try {
-      return await callGemini(systemPrompt, userPrompt, 'ab-test');
+      return await callOpenRouter(systemPrompt, userPrompt, 'ab-test');
     } catch (error) {
       console.error('A/B Test Generation Error:', error.message);
       throw new Error(`Failed to generate A/B test briefs: ${error.message}`);

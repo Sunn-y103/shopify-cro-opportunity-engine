@@ -45,21 +45,37 @@ export class HomepageExtractorService {
     const data = {};
     if (!html) return data;
 
+    // Cap the total inline-script content we process to 500 KB.
+    // Next.js RSC pages can embed several MB of serialised server component
+    // payloads across many <script> tags. Running regex passes on a multi-MB
+    // string creates multiple large copies on the V8 heap simultaneously.
+    // 500 KB is more than enough to capture all meaningful SPA/headless data.
+    const MAX_INLINE_BYTES = 500 * 1024; // 500 KB
+
     let allInlineContent = '';
     if ($) {
       $('script:not([src])').each((_, el) => {
+        if (allInlineContent.length >= MAX_INLINE_BYTES) return false; // stop early
         allInlineContent += $(el).html() || '';
       });
+      // Enforce hard cap in case the last script pushed us over
+      if (allInlineContent.length > MAX_INLINE_BYTES) {
+        allInlineContent = allInlineContent.slice(0, MAX_INLINE_BYTES);
+      }
     }
 
     if (!allInlineContent) {
-      allInlineContent = html;
+      // Fall back to a capped slice of the raw HTML string
+      allInlineContent = html.slice(0, MAX_INLINE_BYTES);
     }
 
     // Clean up escaping before matching
-    const cleaned = allInlineContent
-      .replace(/\\"/g, '"')
+    let cleaned = allInlineContent
+      .replace(/\\\"/g, '"')
       .replace(/\\\\/g, '\\');
+
+    // Release allInlineContent — cleaned is the only copy needed from here
+    allInlineContent = null;
 
     // Next.js App Router RSC payload parsing
     if (cleaned.includes('heroCarouselData') || cleaned.includes('self.__next_f')) {
@@ -108,7 +124,7 @@ export class HomepageExtractorService {
 
     // Pattern 2: window.__INITIAL_STATE__ or window.__PRELOADED_STATE__
     try {
-      const stateMatch = html.match(/window\.__(?:INITIAL|PRELOADED|NUXT|APP)_STATE__\s*=\s*({.+?})(?:\s*;|\s*<\/script>)/s);
+      const stateMatch = cleaned.match(/window\.__(?:INITIAL|PRELOADED|NUXT|APP)_STATE__\s*=\s*({.+?})(?:\s*;|\s*<\/script>)/s);
       if (stateMatch) {
         const parsed = JSON.parse(stateMatch[1]);
         Object.assign(data, { windowState: parsed });
@@ -117,18 +133,22 @@ export class HomepageExtractorService {
 
     // Pattern 3: window.initialData or window.pageData (custom patterns)
     try {
-      const initDataMatch = html.match(/window\.(?:initialData|pageData|siteData)\s*=\s*({.+?})(?:\s*;|\s*<\/script>)/s);
+      const initDataMatch = cleaned.match(/window\.(?:initialData|pageData|siteData)\s*=\s*({.+?})(?:\s*;|\s*<\/script>)/s);
       if (initDataMatch) {
         const parsed = JSON.parse(initDataMatch[1]);
         Object.assign(data, { windowInitialData: parsed });
       }
     } catch (_) {}
 
+    // Release cleaned string — all regex work is complete
+    cleaned = null;
+
     return data;
   }
 
   // ─────────────────────────────────────────────────────────────────
   // JSON-LD helper — parse all embedded structured data blocks
+
   // ─────────────────────────────────────────────────────────────────
   static _extractJsonLd($) {
     const results = [];

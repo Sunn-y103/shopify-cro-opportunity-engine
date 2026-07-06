@@ -69,6 +69,11 @@ export class StoreScraperService {
       // Extract Homepage — pass html so the extractor can parse embedded SPA/RSC JSON
       const homepageData = HomepageExtractorService.extract(homepageResult.$, homepageResult.html);
       output.homepage = { ...output.homepage, ...homepageData };
+
+      // Release the Cheerio DOM immediately — it is only needed for homepage extraction.
+      // homepageResult.html is still needed by CartExtractorService below for
+      // string-based drawer/cart-type detection, so we keep only that reference.
+      homepageResult.$ = null;
     } catch (error) {
       output.errors.push(`Homepage Extraction Failed: ${error.message}`);
       // If we can't load the homepage, the base URL is likely dead. Return early.
@@ -87,6 +92,7 @@ export class StoreScraperService {
     
     // Clear homepageResult to free memory (garbage collection)
     homepageResult = null;
+
 
     // Handle Collections
     if (collectionsResult.status === 'fulfilled') {

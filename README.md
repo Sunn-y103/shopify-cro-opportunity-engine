@@ -2,7 +2,7 @@
 
 AI-powered Conversion Rate Optimization tool for Shopify stores.
 
-This project analyzes Shopify websites by crawling store data and using Google Gemini AI to generate actionable CRO insights, performance issues, and A/B test recommendations.
+This project analyzes Shopify websites by crawling store data and using OpenRouter AI to generate actionable CRO insights, performance issues, and A/B test recommendations.
 
 ---
 ## 🎯 Overview
@@ -14,7 +14,7 @@ It extracts structured metrics and feeds them into an AI evaluator to generate a
 ## ✨ Features
 
 - **Automated Store Scraping:** Intelligently crawls Shopify store structures to extract CRO-critical signals (trust badges, sticky ATCs, product reviews, cart configurations).
-- **AI-Powered Diagnostics:** Uses Google Gemini to analyze structural gaps and output a scored audit with categorized Quick Wins and High-Impact projects.
+- **AI-Powered Diagnostics:** Uses OpenRouter AI to analyze structural gaps and output a scored audit with categorized Quick Wins and High-Impact projects.
 - **Competitor Head-to-Head:** Run direct comparative analysis between two stores to uncover strengths, weaknesses, and unique opportunities to capture market share.
 - **A/B Test Generator:** Instantly converts identified issues into structured experiment briefs (KPIs, lift expectations, hypotheses) ready for engineering teams.
 - **Single-Deployment Architecture:** Tightly integrated full-stack monorepo ready for single-service hosting.
@@ -29,7 +29,7 @@ It extracts structured metrics and feeds them into an AI evaluator to generate a
 
 **Backend:**
 - Node.js + Express
-- Google Gen AI SDK (`@google/genai`)
+- OpenAI SDK (`openai`)
 - Cheerio (for robust DOM extraction)
 - Axios (for HTTP operations)
 
@@ -41,7 +41,7 @@ The application follows a clean, decoupled **Client-Service-AI** architecture:
 
 1. **Client Request:** The React frontend captures the target URL(s) and triggers the backend API.
 2. **Data Extraction:** The Express backend uses dedicated Scraper Services (Homepage, PDP, Cart, Collections) to crawl the Shopify store and normalize the DOM into structured JSON signals.
-3. **AI Evaluation:** The structured payload is sent to Gemini AI via a strictly typed prompt instructing it to act as a CRO consultant.
+3. **AI Evaluation:** The structured payload is sent to OpenRouter AI via a strictly typed prompt instructing it to act as a CRO consultant.
 4. **Presentation:** The JSON response is routed back to the client and rendered into an interactive, filterable report dashboard.
 
 ---
@@ -82,7 +82,7 @@ shopify-cro-engine/
 
 ### Prerequisites
 - Node.js (v18 or higher)
-- A Google Gemini API Key
+- An OpenRouter API Key
 
 ### Installation
 
@@ -101,9 +101,9 @@ shopify-cro-engine/
 3. **Configure Environment Variables:**
    Create a `.env` file in the `backend/` directory:
    ```env
-   GOOGLE_API_KEY=your_gemini_api_key_here
-   GEMINI_MODEL=gemini-2.5-flash
-   GEMINI_MAX_OUTPUT_TOKENS=4000
+   OPENROUTER_API_KEY=your_openrouter_api_key_here
+   OPENROUTER_MODEL=openai/gpt-4o-mini
+   OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
    PORT=5000
    ```
 
@@ -130,7 +130,7 @@ This project is configured for **Single-Service Deployment** on platforms like R
   ```
 - **Environment Variables:**
   - `NODE_ENV`: `production`
-  - `GOOGLE_API_KEY`: `your_key_here`
+  - `OPENROUTER_API_KEY`: `your_key_here`
 
 **How it works:** 
 During the build phase, NPM Workspaces compiles the frontend into `frontend/dist`. During runtime, the Express backend automatically detects `NODE_ENV=production` and serves the static files dynamically.

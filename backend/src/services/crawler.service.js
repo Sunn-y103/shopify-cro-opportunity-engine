@@ -37,6 +37,11 @@ export class CrawlerService {
       headers: { ...DEFAULT_HEADERS },
       timeout: 15000, // 15 seconds max (reduced for safety)
       maxRedirects: 5,
+      // Reject responses larger than 5 MB before they are fully buffered.
+      // Shopify stores with embedded Next.js RSC payloads can serve 10–50 MB pages;
+      // buffering them in full is the largest single cause of OOM on Render Free.
+      maxContentLength: 5 * 1024 * 1024,
+      maxBodyLength: 5 * 1024 * 1024,
       ...options,
     };
 
@@ -98,6 +103,8 @@ export class CrawlerService {
         },
         timeout: 10000, // 10 seconds max
         maxRedirects: 5,
+        // JSON API endpoints are small by nature; 2 MB is generous
+        maxContentLength: 2 * 1024 * 1024,
       });
 
       const contentType = response.headers['content-type'] || '';

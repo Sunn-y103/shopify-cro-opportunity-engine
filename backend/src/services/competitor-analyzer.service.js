@@ -1,4 +1,4 @@
-import { callGemini } from './gemini-client.js';
+import { callOpenRouter } from './openrouter-client.js';
 import { StoreScraperService } from './store-scraper.service.js';
 
 export class CompetitorAnalyzerService {
@@ -11,11 +11,20 @@ export class CompetitorAnalyzerService {
    */
   static async compare(urlA, urlB) {
     try {
-      // 1. Crawl both stores concurrently
-      const [storeA_Data, storeB_Data] = await Promise.all([
-        StoreScraperService.scrape(urlA),
-        StoreScraperService.scrape(urlB)
-      ]);
+      // 1. Scrape stores SEQUENTIALLY — not concurrently.
+      //
+      // The original Promise.all() ran both full scrapes at the same time.
+      // StoreScraperService.scrape() itself runs 3 sub-crawls concurrently
+      // (collections + products + cart), so Promise.all() of two scrapes meant
+      // 6 simultaneous HTTP responses all buffered in RAM plus 6 Cheerio DOM
+      // trees alive at the same moment — the primary OOM cause on Render Free.
+      //
+      // Serialising adds ~10–15 s wall time but cuts peak heap usage by ~50%.
+      console.log('[CompetitorAnalyzerService] Scraping Store A...');
+      const storeA_Data = await StoreScraperService.scrape(urlA);
+
+      console.log('[CompetitorAnalyzerService] Scraping Store B...');
+      const storeB_Data = await StoreScraperService.scrape(urlB);
 
       // 2. Log diagnostic summary of scraped data before calling AI
       this._logScrapeSummary('A', urlA, storeA_Data);
@@ -45,24 +54,35 @@ export class CompetitorAnalyzerService {
         };
       }
 
-      // 3. Build prompts
+      // 3. Build slim prompt payloads, then release the raw store data objects.
+      // Both storeA_Data and storeB_Data contain the full scraped graph
+      // (products[], collections[], Cheerio references, etc.) — we only need
+      // the compact slim() representation from here on.
+      const userPrompt = this._buildPrompt(storeA_Data, storeB_Data);
+
+      // Allow GC of the large raw objects before making the OpenRouter API call
+      // (the API call itself can allocate a few MB for the response buffer).
+      storeA_Data.collections = storeA_Data.products = storeA_Data.homepage = null;
+      storeB_Data.collections = storeB_Data.products = storeB_Data.homepage = null;
+
+
+      // 4. Build system prompt
       const systemPrompt = [
         'You are a Shopify CRO competitive analyst.',
         'You MUST return ONLY valid JSON.',
-        'Do not include markdown, code fences, explanations, or any surrounding text.',
+        'Do not include markdown. Do not include code fences. Do not include explanations.',
+        'Do not omit commas or braces.',
         'Return exactly one JSON object.',
         'Every JSON object and array must be completely closed with proper brackets.',
-        'Never truncate the JSON response — if running low on space, shorten string values but always close all brackets.',
+        'Never truncate the JSON response — if running low on space, shorten string values but always close all brackets and braces.',
         'All string values must be 150 characters or fewer.',
         'CRITICAL INSTRUCTION ON TRUTHFULNESS:',
         'You must distinguish between "Feature Missing" (e.g. the store definitely does not have this feature) and "Feature Not Detected" (the scraper was unable to extract or find evidence of this feature).',
         'If the scraped data is empty or null for a specific field, NEVER say the store is missing that feature. Instead, use "Not Detected" terminology.',
       ].join(' ');
 
-      const userPrompt = this._buildPrompt(storeA_Data, storeB_Data);
-
-      // 4. Call Gemini via shared client
-      const result = await callGemini(systemPrompt, userPrompt, 'compare');
+      // 5. Call OpenRouter via shared client
+      const result = await callOpenRouter(systemPrompt, userPrompt, 'compare');
       if (result && Array.isArray(result.opportunitiesForA)) {
         result.opportunitiesForA = result.opportunitiesForA.map(opp => ({
           ...opp,
