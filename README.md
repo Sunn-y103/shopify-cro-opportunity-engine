@@ -48,6 +48,38 @@ The application follows a clean, decoupled **Client-Service-AI** architecture:
 
 ---
 
+## 📁 Folder Structure
+
+```text
+shopify-cro-engine/
+├── backend/
+│   ├── src/
+│   │   ├── controllers/      # Route controllers (MVC logic)
+│   │   ├── middlewares/      # Express middlewares (e.g., error handling)
+│   │   ├── routes/           # API route definitions
+│   │   ├── services/         # Core business logic (Scraping, AI, etc.)
+│   │   ├── utils/            # Shared backend utilities
+│   │   ├── app.js            # Express app configuration & static serving
+│   │   └── server.js         # Entry point for backend
+│   └── package.json
+├── frontend/
+│   ├── public/               # Static assets
+│   ├── src/
+│   │   ├── assets/           # Images, icons, etc.
+│   │   ├── components/       # Reusable React components (UI, Report, Layout)
+│   │   ├── pages/            # Main route pages (Home, Report)
+│   │   ├── services/         # API client layer (Axios interceptors)
+│   │   ├── App.jsx           # Main React component & router setup
+│   │   └── main.jsx          # Entry point for frontend
+│   ├── tailwind.config.js    # Tailwind configuration
+│   ├── vite.config.js        # Vite bundler configuration
+│   └── package.json
+├── package.json              # Root workspace configuration
+└── README.md                 # Project documentation
+```
+
+---
+
 ## 🚀 Local Setup
 
 ### Prerequisites
