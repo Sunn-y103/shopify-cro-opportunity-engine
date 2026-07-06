@@ -20,10 +20,10 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'"], // Required for Vite/React runtime
-        styleSrc: ["'self'", "'unsafe-inline'"],  // Required for Tailwind/Vite injected styles
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],  // Required for Tailwind/Vite injected styles and Google Fonts
         imgSrc: ["'self'", "data:", "https:"],    // Allow external images (CRO engine)
         connectSrc: ["'self'", "https:"],         // Allow API requests
-        fontSrc: ["'self'", "https:", "data:"],   // Allow external fonts
+        fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],   // Allow external fonts
         objectSrc: ["'none'"],
         upgradeInsecureRequests: [],
       },
