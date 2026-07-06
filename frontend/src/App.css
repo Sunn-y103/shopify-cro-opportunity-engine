@@ -1,0 +1,43 @@
+/* App.css — Emerald + Charcoal app-specific utilities */
+
+/* Input with left icon */
+.input-with-icon {
+  position: relative;
+}
+.input-with-icon input {
+  padding-left: 2.625rem;
+}
+.input-icon {
+  position: absolute;
+  left: 0.875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9CA3AF;
+  pointer-events: none;
+}
+
+/* Card hover lift — subtle, professional */
+.card-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+/* Priority left-border variants */
+.priority-high   { border-left: 3px solid #EF4444; }
+.priority-medium { border-left: 3px solid #F59E0B; }
+.priority-low    { border-left: 3px solid #10B981; }
+
+/* Score ring fill animation */
+.score-ring-fill {
+  transition: stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Section divider */
+.section-divider {
+  border: none;
+  border-top: 1px solid #E5E7EB;
+  margin: 0;
+}
