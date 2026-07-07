@@ -4,6 +4,23 @@ AI-powered Conversion Rate Optimization tool for Shopify stores.
 
 This project analyzes Shopify websites by crawling store data and using OpenRouter AI to generate actionable CRO insights, performance issues, and A/B test recommendations.
 
+### The Project is deployed & accessible here : https://shopify-cro-opportunity-engine-yq69.onrender.com
+
+## Screenshots
+
+### Dashboard
+![Image](screenshots/image.png)
+
+### Head to Head Comparison
+![Comparison](screenshots/comparison.png)
+
+### Competitor Analysis Report
+![Competitor Analysis Report](screenshots/competitor-analysis-report.png)
+
+### CRO Report
+![CRO Report](screenshots/cro-report.png)
+
+
 ---
 ## 🎯 Overview
 
