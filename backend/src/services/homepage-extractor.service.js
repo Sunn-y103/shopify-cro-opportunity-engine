@@ -30,9 +30,24 @@ export class HomepageExtractorService {
       featuredProducts:    this._extractFeaturedProducts($),
       navigation:          this._extractNavigation($, spaData),
       footer:              this._extractFooter($),
-      newsletter:          this._extractNewsletter($, spaData),
+      newsletter:          (() => {
+        const raw = this._extractNewsletter($, spaData);
+        return {
+          checked: true,
+          detected: !!raw.exists,
+          exists: !!raw.exists,
+          hasIncentive: !!raw.hasIncentive
+        };
+      })(),
       socialLinks:         this._extractSocialLinks($, jsonLd, spaData),
-      trustBadges:         this._extractTrustBadges($),
+      trustBadges:         (() => {
+        const list = this._extractTrustBadges($);
+        return {
+          checked: true,
+          detected: list.length > 0,
+          badges: list
+        };
+      })(),
     };
   }
 

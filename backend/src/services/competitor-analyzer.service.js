@@ -1,4 +1,5 @@
 import { callOpenRouter } from './openrouter-client.js';
+import { buildStoreSummary } from '../utils/store-summary.util.js';
 import { StoreScraperService } from './store-scraper.service.js';
 
 export class CompetitorAnalyzerService {
@@ -54,11 +55,63 @@ export class CompetitorAnalyzerService {
         };
       }
 
-      // 3. Build slim prompt payloads, then release the raw store data objects.
-      // Both storeA_Data and storeB_Data contain the full scraped graph
-      // (products[], collections[], Cheerio references, etc.) — we only need
-      // the compact slim() representation from here on.
-      const userPrompt = this._buildPrompt(storeA_Data, storeB_Data);
+      const summaryA = buildStoreSummary(storeA_Data);
+      const summaryB = buildStoreSummary(storeB_Data);
+
+      // 3. Determine winners deterministically based on weighted comparative signals
+      const WEIGHTS = {
+        // High weight
+        heroCta: 3, trustBadges: 3, filtersDetected: 3, sortingDetected: 3,
+        reviewsDetected: 3, ratingsDetected: 3, shippingInfoDetected: 3, returnPolicyDetected: 3,
+        stickyAtcDetected: 3, buyNowDetected: 3, trustBadgesDetected: 3,
+        freeShippingBanner: 3, expressCheckout: 3, upsellsDetected: 3, crossSellsDetected: 3,
+        // Medium weight
+        newsletter: 2, navigationSize: 2, featuredCollections: 2, filterLabelsCount: 2,
+        sortingOptionsCount: 2, paymentIconsDetected: 2, couponDetected: 2,
+        // Low weight
+        heroHeading: 1, announcementBar: 1, socialLinks: 1, count: 1, socialProofLinks: 1
+      };
+
+      const determineWinnerBySignals = (sectionA, sectionB) => {
+        let scoreA = 0;
+        let scoreB = 0;
+        if (!sectionA || !sectionB) return 'Tie';
+        
+        for (const key of Object.keys(sectionA)) {
+          const weight = WEIGHTS[key] || 1;
+          const valA = sectionA[key];
+          const valB = sectionB[key];
+
+          const numA = typeof valA === 'boolean' ? (valA ? 1 : 0) : (typeof valA === 'number' ? valA : 0);
+          const numB = typeof valB === 'boolean' ? (valB ? 1 : 0) : (typeof valB === 'number' ? valB : 0);
+
+          if (numA > numB) scoreA += weight;
+          else if (numB > numA) scoreB += weight;
+        }
+
+        // Return tie if evidence is mixed or difference is insignificant
+        if (Math.abs(scoreA - scoreB) <= 2) return 'Tie';
+        return scoreA > scoreB ? 'A' : 'B';
+      };
+
+      const winners = {
+        homepage: determineWinnerBySignals(summaryA.Homepage, summaryB.Homepage),
+        collections: determineWinnerBySignals(summaryA.Collections, summaryB.Collections),
+        pdp: determineWinnerBySignals(summaryA.Products, summaryB.Products),
+        cart: determineWinnerBySignals(summaryA.Cart, summaryB.Cart),
+        reviewsAndTrust: determineWinnerBySignals(summaryA.Trust, summaryB.Trust)
+      };
+
+      // UX & Conversion ties into the overall comparative strength
+      let totalScoreA = 0, totalScoreB = 0;
+      Object.keys(winners).forEach(k => {
+        if (winners[k] === 'A') totalScoreA++;
+        if (winners[k] === 'B') totalScoreB++;
+      });
+      winners.uxAndConversion = totalScoreA > totalScoreB ? 'A' : (totalScoreB > totalScoreA ? 'B' : 'Tie');
+
+      // 4. Build user prompt
+      const userPrompt = this._buildPrompt(summaryA, summaryB, storeA_Data, storeB_Data, winners);
 
       // Allow GC of the large raw objects before making the OpenRouter API call
       // (the API call itself can allocate a few MB for the response buffer).
@@ -66,19 +119,33 @@ export class CompetitorAnalyzerService {
       storeB_Data.collections = storeB_Data.products = storeB_Data.homepage = null;
 
 
-      // 4. Build system prompt
+      // 5. Build system prompt
       const systemPrompt = [
-        'You are a Shopify CRO competitive analyst.',
-        'You MUST return ONLY valid JSON.',
-        'Do not include markdown. Do not include code fences. Do not include explanations.',
-        'Do not omit commas or braces.',
-        'Return exactly one JSON object.',
-        'Every JSON object and array must be completely closed with proper brackets.',
-        'Never truncate the JSON response — if running low on space, shorten string values but always close all brackets and braces.',
-        'All string values must be 150 characters or fewer.',
-        'CRITICAL INSTRUCTION ON TRUTHFULNESS:',
-        'You must distinguish between "Feature Missing" (e.g. the store definitely does not have this feature) and "Feature Not Detected" (the scraper was unable to extract or find evidence of this feature).',
-        'If the scraped data is empty or null for a specific field, NEVER say the store is missing that feature. Instead, use "Not Detected" terminology.',
+        'You are a strict CRO analysis engine.',
+        'The scraped crawler data provided below is the ONLY source of truth. Your job is to analyze this data, not to use general ecommerce knowledge or assumptions.',
+        'RULES:',
+        '1. DATA GROUNDING: Every comparison, strength, weakness, opportunity, and recommendation must come from extracted crawler fields. Do not use assumptions.',
+        '2. NO INVENTED FEATURES: Never claim a store has shipping, returns, product descriptions, payment methods, trust badges, reviews, ratings, or navigation unless explicitly present in crawler data. If missing, write: "Not detected from available crawl data."',
+        '3. UNKNOWN DATA: Unknown means "Could not be verified from available crawl data." Do not penalize a store for unknown fields.',
+        '4. COMPARISONS: Comparison winners must come ONLY from deterministic backend logic. Explain WHY the backend picked the winner using strict evidence (e.g. "Store A has more detected features: Reviews: YES"). When evidence is balanced, prefer "Tie" over forcing a winner.',
+        '5. NO BRAND FLUFF: Do not write brand descriptions like "Store X focuses on sustainability". This is a technical CRO audit.',
+        '6. NO UNSUPPORTED CLAIMS: Avoid causal claims. Recommendations must explain user experience or friction improvements, not guaranteed business outcomes. Do NOT use phrases like "increase conversion rates", "boost sales by X%", "increase revenue", or "significantly improve conversions". Example: Instead of "Upsells increase AOV", use "Upsell recommendations help customers discover additional products".',
+        '7. OPPORTUNITIES: Must contain Title, Category, Evidence, Why it matters, Recommendation, Impact Score (1-5 integer), Confidence (High/Medium/Low).',
+        '8. OPPORTUNITY FRAMING: Check both stores before creating opportunities. If Store A lacks a feature but Store B has it, frame it as matching competitor capabilities. If BOTH lack the feature, frame it as a neutral improvement (e.g., "Opportunity to improve product discovery"). Do not use phrases like "Opportunity to beat competitor".',
+        '9. NEUTRAL EXECUTIVE SUMMARY: Avoid absolute judgments (e.g., "Store B excels"). Use evidence-based wording (e.g., "Store B shows stronger detected CRO signals..."). Always clarify that conclusions are based on available crawler data. Never include brand positioning, marketing claims, or business assumptions.',
+        '10. CART HANDLING: Do not treat unknown cart data as a failed score. If unknown, write: "Cart evaluation has limited confidence because cart data could not be fully verified from available crawl data." Only mention missing features if explicitly detected as NO.',
+        '11. TRUST STATEMENTS: Avoid absolute statements like "has all elements present". Use evidence-based wording: "shows strong detected signals through available reviews, ratings, and social proof elements."',
+        '12. HOMEPAGE LANGUAGE: If an announcement bar is missing, do not assume it is for promotions. Use: "The homepage does not have a detected announcement bar, which may reduce visibility of important store messaging."',
+        '13. GENERAL RULES: Unknown ≠ Missing. Missing ≠ Failed. Only mention features explicitly available in crawler data. Avoid absolute statements like "Best performing store", "Strong brand identity", "Innovative company", or "Premium experience". Use phrases like "Not detected from available crawl data" or "Could not be verified from available crawl data".',
+        '14. CONFIDENCE: High (directly detected comparison), Medium (partial data), Low (cannot verify).',
+        '15. OUTPUT STYLE: Evidence-driven, neutral tone, no assumptions, no generic marketing statements. NEVER override, recalculate, or contradict backend winner decisions.',
+        'STRING LENGTH LIMITS:',
+        '- executiveSummary: 1000 characters maximum.',
+        '- analysis (in comparison sections): 500 characters maximum per field.',
+        '- keyDifferences: 300 characters maximum per bullet.',
+        '- strengths/weaknesses: 200 characters maximum per bullet.',
+        '- evidence and whyItMatters: 500 characters maximum.',
+        '- recommendation: 300 characters maximum.'
       ].join(' ');
 
       // 5. Call OpenRouter via shared client
@@ -86,13 +153,13 @@ export class CompetitorAnalyzerService {
       if (result && Array.isArray(result.opportunitiesForA)) {
         result.opportunitiesForA = result.opportunitiesForA.map(opp => ({
           ...opp,
-          impact: typeof opp.impact === 'number' ? Math.round(opp.impact) : Math.round(parseFloat(opp.impact)) || 3
+          impact: opp.impactScore ? Math.round(opp.impactScore) : (typeof opp.impact === 'number' ? Math.round(opp.impact) : Math.round(parseFloat(opp.impact)) || 3)
         }));
       }
       return result;
 
     } catch (error) {
-      console.error('Competitor Analysis Error:', error.message);
+      console.error('Competitor Analysis Error:', error.stack || error.message);
       throw new Error(`Failed to generate competitor comparison: ${error.message}`);
     }
   }
@@ -104,15 +171,15 @@ export class CompetitorAnalyzerService {
   static _logScrapeSummary(label, url, store) {
     const collections       = store.collections || [];
     const products          = store.products    || [];
-    const filtersTotal      = collections.reduce((sum, c) => sum + (c.filters?.length ?? 0), 0);
-    const sortingTotal      = collections.reduce((sum, c) => sum + (c.sortingOptions?.length ?? 0), 0);
-    const colsWithFilters   = collections.filter(c => c.filters?.length > 0).length;
-    const colsWithSorting   = collections.filter(c => c.sortingOptions?.length > 0).length;
-    const productsWithReviews  = products.filter(p => p.reviews?.hasReviews).length;
-    const productsWithBuyNow   = products.filter(p => p.buyNow).length;
-    const productsWithSticky   = products.filter(p => p.stickyAddToCart).length;
-    const productsWithTrust    = products.filter(p => p.trustBadges?.length > 0).length;
-    const homepageTrustBadges  = store.homepage?.trustBadges?.length ?? 0;
+    const filtersTotal      = collections.reduce((sum, c) => sum + (c.filters?.labels?.length ?? c.filters?.length ?? 0), 0);
+    const sortingTotal      = collections.reduce((sum, c) => sum + (c.sortingOptions?.options?.length ?? c.sortingOptions?.length ?? 0), 0);
+    const colsWithFilters   = collections.filter(c => (c.filters?.labels?.length ?? c.filters?.length ?? 0) > 0).length;
+    const colsWithSorting   = collections.filter(c => (c.sortingOptions?.options?.length ?? c.sortingOptions?.length ?? 0) > 0).length;
+    const productsWithReviews  = products.filter(p => p.reviews?.detected ?? p.reviews?.hasReviews).length;
+    const productsWithBuyNow   = products.filter(p => p.buyNow?.detected ?? p.buyNow).length;
+    const productsWithSticky   = products.filter(p => p.stickyAddToCart?.detected ?? p.stickyAddToCart).length;
+    const productsWithTrust    = products.filter(p => (p.trustBadges?.badges?.length ?? p.trustBadges?.length ?? 0) > 0).length;
+    const homepageTrustBadges  = store.homepage?.trustBadges?.badges?.length ?? store.homepage?.trustBadges?.length ?? 0;
     const errors               = store.errors || [];
 
     console.log(`\n┌─ Scrape Diagnostic — Store ${label} (${url}) ${'─'.repeat(10)}`);
@@ -132,104 +199,63 @@ export class CompetitorAnalyzerService {
     console.log(`└${'─'.repeat(60)}`);
   }
 
-  static _buildPrompt(storeA, storeB) {
-    // Build a richer slim payload that preserves actual scraped values
-    // so the AI can reason from evidence, not just booleans.
-    const slim = (store) => {
-      const collections = store.collections || [];
-      const products    = store.products    || [];
-
-      // Gather actual filter labels (first 5 across collections)
-      const filterLabels = [];
-      for (const col of collections) {
-        for (const f of (col.filters || [])) {
-          if (filterLabels.length < 5 && !filterLabels.includes(f)) filterLabels.push(f);
-        }
-      }
-
-      // Gather actual sort options (first 5 across collections)
-      const sortOptions = [];
-      for (const col of collections) {
-        for (const s of (col.sortingOptions || [])) {
-          if (sortOptions.length < 5 && !sortOptions.includes(s)) sortOptions.push(s);
-        }
-      }
-
-      // Per-product PDP signals (up to 3 products)
-      const pdpSignals = products.slice(0, 3).map(p => ({
-        name:            p.name,
-        hasReviews:      p.reviews?.hasReviews ?? false,
-        reviewRating:    p.reviews?.rating     ?? null,
-        reviewCount:     p.reviews?.count      ?? null,
-        hasCompareAt:    !!p.compareAtPrice,
-        hasBuyNow:       p.buyNow              ?? false,
-        hasStickyATC:    p.stickyAddToCart     ?? false,
-        hasAddToCart:    p.addToCart           ?? false,
-        hasDesc:         !!p.description,
-        hasShipping:     p.shippingInfo        ?? false,
-        hasReturns:      p.returnPolicy        ?? false,
-        trustBadges:     p.trustBadges?.length ?? 0,
-        paymentIcons:    p.paymentIcons?.length ?? 0,
-        images:          p.images?.length       ?? 0,
-      }));
-
-      return {
-        url:             store.storeUrl,
-        isShopify:       store.isShopify,
-        storeName:       store.homepage?.storeName,
-        hero:            store.homepage?.hero,
-        announcementBar: store.homepage?.announcementBar,
-        newsletter:      store.homepage?.newsletter,
-        socialLinksCount:    Object.keys(store.homepage?.socialLinks || {}).length,
-        homepageTrustBadges: store.homepage?.trustBadges?.length ?? 0,
-        collectionsFound:    collections.length,
-        filterLabels,           // actual filter names, not just a boolean
-        sortOptions,            // actual sort option names
-        hasFilters:          filterLabels.length > 0,
-        hasSorting:          sortOptions.length > 0,
-        productsFound:       products.length,
-        pdpSignals,             // detailed per-product signals
-        cart: {
-          type:            store.cart?.cartType,
-          coupon:          store.cart?.couponField        ?? false,
-          shippingCalc:    store.cart?.shippingEstimator  ?? false,
-          freeShipBanner:  store.cart?.freeShippingBanner ?? false,
-          upsells:         store.cart?.upsells            ?? false,
-          crossSells:      store.cart?.crossSells         ?? false,
-          expressCheckout: store.cart?.expressCheckout    ?? false,
-          trustBadges:     store.cart?.trustBadges?.length ?? 0,
-          paymentMethods:  store.cart?.paymentMethods     ?? [],
-        },
-        scrapingErrors: store.errors || [],
-      };
-    };
+  static _buildPrompt(summaryA, summaryB, storeA, storeB, winners) {
+    const opportunitiesToExplain = (storeA.opportunities || []).map(o => ({
+      id: o.id,
+      title: o.issue,
+      impact: Math.round(o.impact),
+      effort: o.effort || 'Medium',
+      category: o.category || 'UX'
+    }));
 
     return `Compare these two Shopify stores and return a concise competitor analysis JSON.
 
-CRITICAL: Return ONLY valid JSON. No markdown. No code fences. No explanations. No surrounding text.
-Every object and array must be completely closed. Never truncate the JSON response.
-If a value would be very long, shorten it — but always close all brackets and braces.
+CRITICAL: Return ONLY valid JSON. No markdown. No code fences. No explanations outside the JSON.
+Every object and array must be completely closed.
 
-STORE A: ${JSON.stringify(slim(storeA))}
-STORE B: ${JSON.stringify(slim(storeB))}
+PRE-COMPUTED WINNERS (DO NOT CHANGE THESE):
+${JSON.stringify(winners, null, 2)}
+
+STORE A EVIDENCE: 
+${JSON.stringify(summaryA)}
+
+STORE B EVIDENCE: 
+${JSON.stringify(summaryB)}
+
+OPPORTUNITIES FOR STORE A (DO NOT CHANGE TITLE, IMPACT, EFFORT, OR CATEGORY):
+${JSON.stringify(opportunitiesToExplain)}
 
 RETURN THIS EXACT JSON SCHEMA (replace placeholder values, no extra fields):
 {
-  "competitorA": { "url": "string", "name": "string" },
-  "competitorB": { "url": "string", "name": "string" },
-  "executiveSummary": "string",
+  "competitorA": { "url": "${storeA.storeUrl}", "name": "${storeA.homepage?.storeName || 'Store A'}" },
+  "competitorB": { "url": "${storeB.storeUrl}", "name": "${storeB.homepage?.storeName || 'Store B'}" },
+  "executiveSummary": "Summarize where the competitor is better, where the analyzed store is better, and the biggest conversion opportunities. Do not use generic assumptions.",
   "comparison": {
-    "homepage": { "winner": "A|B|Tie", "analysis": "string", "keyDifferences": ["string"] },
-    "collections": { "winner": "A|B|Tie", "analysis": "string", "keyDifferences": ["string"] },
-    "pdp": { "winner": "A|B|Tie", "analysis": "string", "keyDifferences": ["string"] },
-    "cart": { "winner": "A|B|Tie", "analysis": "string", "keyDifferences": ["string"] },
-    "reviewsAndTrust": { "winner": "A|B|Tie", "analysis": "string", "keyDifferences": ["string"] },
-    "uxAndConversion": { "winner": "A|B|Tie", "analysis": "string", "keyDifferences": ["string"] }
+    "homepage": { "winner": "${winners.homepage}", "analysis": "Explain why based on evidence.", "keyDifferences": ["Factual bullet 1", "Factual bullet 2"] },
+    "collections": { "winner": "${winners.collections}", "analysis": "Explain why based on evidence.", "keyDifferences": ["Factual bullet 1", "Factual bullet 2"] },
+    "pdp": { "winner": "${winners.pdp}", "analysis": "Explain why based on evidence.", "keyDifferences": ["Factual bullet 1", "Factual bullet 2"] },
+    "cart": { "winner": "${winners.cart}", "analysis": "Explain why based on evidence.", "keyDifferences": ["Factual bullet 1", "Factual bullet 2"] },
+    "reviewsAndTrust": { "winner": "${winners.reviewsAndTrust}", "analysis": "Explain why based on evidence.", "keyDifferences": ["Factual bullet 1", "Factual bullet 2"] },
+    "uxAndConversion": { "winner": "${winners.uxAndConversion}", "analysis": "Explain overall why based on evidence.", "keyDifferences": ["Factual bullet 1", "Factual bullet 2"] }
   },
-  "strengths": { "A": ["string"], "B": ["string"] },
-  "weaknesses": { "A": ["string"], "B": ["string"] },
+  "strengths": { 
+    "A": ["Factual strength 1", "Factual strength 2", "Factual strength 3"], 
+    "B": ["Factual strength 1", "Factual strength 2", "Factual strength 3"] 
+  },
+  "weaknesses": { 
+    "A": ["Factual weakness 1", "Factual weakness 2", "Factual weakness 3"], 
+    "B": ["Factual weakness 1", "Factual weakness 2", "Factual weakness 3"] 
+  },
   "opportunitiesForA": [
-    { "issue": "string", "evidence": "string", "recommendation": "string", "impact": number }
+    { 
+      "title": "Exact title from provided opportunities", 
+      "category": "Exact category from provided opportunities",
+      "evidence": "Supporting factual evidence identifying the problem (e.g. Store A: Filters = NO, Store B: Filters = YES)", 
+      "whyItMatters": "Short explanation of why it matters",
+      "recommendation": "Practical recommended action", 
+      "impactScore": 4,
+      "confidence": "High | Medium | Low"
+    }
   ]
 }`;
   }

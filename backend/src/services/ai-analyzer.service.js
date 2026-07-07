@@ -1,6 +1,5 @@
 import { callOpenRouter } from './openrouter-client.js';
-
-// ──────────────────────────────────────────────────────────────────
+import { buildStoreSummary } from '../utils/store-summary.util.js';
 
 export class AiAnalyzerService {
   /**
@@ -11,179 +10,171 @@ export class AiAnalyzerService {
    */
   static async analyze(storeData) {
     const systemPrompt = [
-      'You are a Shopify CRO consultant.',
-      'You MUST return ONLY valid JSON.',
-      'Do not include markdown. Do not include code fences. Do not include explanations.',
-      'Do not omit commas or braces.',
-      'Return exactly one JSON object.',
-      'All string values must be 120 characters or fewer.',
-      'CRITICAL TRUTHFULNESS INSTRUCTION:',
-      'You must distinguish between "Feature Missing" (e.g., the store definitely does not have this feature) and "Feature Not Detected" (the scraper was unable to extract or find evidence of this feature).',
-      'If the scraped data is empty or null for a specific field, NEVER say the store is missing that feature. Instead, write:',
-      '- "Add to Cart could not be detected by the scraper." (or similar for PDPs)',
-      '- "No filtering controls were detected during analysis." (or similar for Collections)',
-      '- "No review widgets were detected on the analyzed pages." (or similar for trust/social)',
-      'Use this distinct "Not Detected" language in your analysis fields and opportunities evidence/issue description.',
-      'CONFIDENCE LEVEL RULES:',
-      'Set the confidence field of each opportunity strictly based on evidence:',
-      '- "High" ONLY if multiple pages were crawled/scraped and the feature/issue is confirmed.',
-      '- "Medium" if there is partial evidence or some sections are empty.',
-      '- "Low" if only the homepage was scraped, or extraction quality is limited.',
-      'Do NOT always output "High".',
-      'OPPORTUNITY CONTENT:',
-      'Every opportunity must include:',
-      '- "issue": A brief title using "Not Detected" or "Missing" strictly based on evidence.',
-      '- "evidence": Use the format: "Analyzed X pages. [State what was found or not]. Reasoning: [Explain why this is an issue for conversion rate]."',
-      '- "recommendation": Concrete actionable recommendation.',
+      'You are a strict CRO analysis engine.',
+      'The scraped crawler data provided below is the ONLY source of truth. Your job is to analyze this data, not to use general ecommerce knowledge or assumptions.',
+      'RULES:',
+      '1. DATA GROUNDING: Every statement must be directly supported by crawler data. Do not skip available crawler fields.',
+      '2. NO HALLUCINATIONS: Never invent features. Never assume standard ecommerce features exist. Never mention shipping, returns, payment methods, policies, or trust elements unless they exist in crawler data. If crawler says NO or Unknown, write: "Not detected from available crawl data."',
+      '3. OPPORTUNITIES: Explain ONLY the opportunities provided in the prompt. Do not generate generic CRO recommendations. Each must have title, category, evidence, whyItMatters, recommendation, impactScore (1-5 integer), confidence (High/Medium/Low).',
+      '4. IMPACT SCORE: Use only whole numbers 1-5. Do not generate fake conversion lift percentages (e.g. no +0.5%).',
+      '5. CONFIDENCE: High (directly detected/missing), Medium (partial detection), Low (cannot verify).',
+      '6. NO UNSUPPORTED CLAIMS: Avoid causal claims. Recommendations must explain user experience or friction improvements, not guaranteed business outcomes. Do NOT use phrases like "increase conversion rates", "boost sales by X%", "increase revenue", or "significantly improve conversions". Example: Instead of "Upsells increase AOV", use "Upsell recommendations help customers discover additional products".',
+      '7. CART HANDLING: Do not treat unknown cart data as a failed score or say "Cart lacks essential features". If unknown, write: "Cart evaluation has limited confidence because cart data could not be fully verified from available crawl data." Only mention missing features if explicitly detected as NO.',
+      '8. TRUST STATEMENTS: Avoid absolute statements like "has all elements present". Use evidence-based wording: "shows strong detected signals through available reviews, ratings, and social proof elements."',
+      '9. HOMEPAGE LANGUAGE: If an announcement bar is missing, do not assume it is for promotions. Use: "The homepage does not have a detected announcement bar, which may reduce visibility of important store messaging."',
+      '10. GENERAL RULES: Unknown ≠ Missing. Missing ≠ Failed. Only mention features explicitly available in crawler data. Avoid absolute statements like "Best performing store", "Strong brand identity", "Innovative company", or "Premium experience". Use phrases like "Not detected from available crawl data" or "Could not be verified from available crawl data".',
+      '11. CRO SCORE: The backend calculates the score. In the executive summary, provide a category breakdown explaining how the final score was calculated.',
+      '12. EXECUTIVE SUMMARY: Include Overall CRO score meaning, Strong areas (evidence-based), Weak areas (evidence-based), Highest priority improvements. Never include brand positioning, marketing claims, or business assumptions.',
+      'The final report must look like a professional CRO SaaS audit where Crawler data = facts, and AI = analysis and prioritization only.',
+      'STRING LENGTH LIMITS:',
+      '- executiveSummary: 1000 characters maximum.',
+      '- All analysis subfields (homepage, collections, pdp, cart, trust): 500 characters maximum per field.',
+      '- evidence and whyItMatters: 500 characters maximum per opportunity.',
+      '- recommendation: 300 characters maximum per opportunity.'
     ].join(' ');
 
     const userPrompt = this._buildPrompt(storeData);
 
     try {
       const result = await callOpenRouter(systemPrompt, userPrompt, 'analyze');
-      if (result && Array.isArray(result.opportunities)) {
-        result.opportunities = result.opportunities.map(opp => ({
-          ...opp,
-          impact: typeof opp.impact === 'number' ? Math.round(opp.impact) : Math.round(parseFloat(opp.impact)) || 3
-        }));
+      
+      const backendOpps = storeData.opportunities || [];
+      const mergedOpps = [];
+
+      for (const bOpp of backendOpps) {
+        // Find matching opportunity from LLM by stable ID (case-insensitive)
+        let llmOpp = result?.opportunities?.find(o => String(o.id || '').toLowerCase() === String(bOpp.id).toLowerCase());
+        
+        // Fallback: match by issue title
+        if (!llmOpp) {
+          llmOpp = result?.opportunities?.find(o => String(o.issue || '').toLowerCase() === String(bOpp.issue).toLowerCase());
+        }
+
+        if (llmOpp) {
+          mergedOpps.push({
+            ...bOpp,
+            issue: llmOpp.title || bOpp.issue,
+            category: llmOpp.category || bOpp.category,
+            whyItMatters: llmOpp.whyItMatters || 'This improves user experience and conversions.',
+            evidence: llmOpp.evidence || bOpp.defaultEvidence || 'Not detected from available crawl data.',
+            recommendation: llmOpp.recommendation || bOpp.defaultRecommendation || 'Enable this feature.',
+            impact: llmOpp.impactScore ? Math.round(llmOpp.impactScore) : bOpp.impact,
+            confidence: llmOpp.confidence || 'Medium'
+          });
+        } else {
+          // Fallback if AI didn't return this opportunity at all
+          mergedOpps.push({
+            ...bOpp,
+            whyItMatters: 'This improves user experience and conversions.',
+            evidence: bOpp.defaultEvidence || 'Not detected from available crawl data.',
+            recommendation: bOpp.defaultRecommendation || 'Enable this feature.',
+            impact: bOpp.impact,
+            confidence: 'Medium'
+          });
+        }
       }
-      return result;
+
+      // Generate quickWins and highImpactProjects dynamically
+      const quickWins = mergedOpps
+        .filter(opp => opp.effort === 'Low')
+        .map(opp => opp.issue);
+
+      const highImpactProjects = mergedOpps
+        .filter(opp => opp.impact >= 4)
+        .map(opp => opp.issue);
+
+      return {
+        executiveSummary: result?.executiveSummary || `We evaluated your store and assigned a CRO score of ${storeData.croScore}/100.`,
+        analysis: {
+          homepage: result?.analysis?.homepage || 'Homepage analyzed.',
+          collections: result?.analysis?.collections || 'Collections analyzed.',
+          pdp: result?.analysis?.pdp || 'PDP analyzed.',
+          cart: result?.analysis?.cart || 'Cart analyzed.',
+          trust: result?.analysis?.trust || 'Trust elements analyzed.'
+        },
+        opportunities: mergedOpps,
+        quickWins,
+        highImpactProjects
+      };
+
     } catch (error) {
       throw new Error(`Failed to analyze store data via AI: ${error.message}`);
     }
   }
 
   static _buildPrompt(storeData) {
-    // ── Build a rich but concise CRO-critical payload ──────────────
     const hp   = storeData.homepage  || {};
     const cols = storeData.collections || [];
     const prds = storeData.products   || [];
     const cart = storeData.cart       || {};
 
-    const d = {
-      url:       storeData.storeUrl,
+    const storeSummary = buildStoreSummary(storeData);
+
+    const cleanD = {
+      storeUrl: storeData.storeUrl,
       isShopify: storeData.isShopify,
-      storeName: hp.storeName,
+      extractionQualityScore: storeData.extractionQuality?.score,
+      pagesCrawledCount: storeData.diagnostics?.pagesCrawled?.length || 0,
+      
+      croScore: storeData.croScore,
+      scoreBreakdown: storeData.scoreBreakdown,
 
-      // Homepage signals
-      hero: {
-        heading:    hp.hero?.heading    || null,
-        subheading: hp.hero?.subheading || null,
-        ctaText:    hp.hero?.cta?.text  || null,
-      },
-      announcementBar:    !!hp.announcementBar,
-      announcementText:   hp.announcementBar ? String(hp.announcementBar).slice(0, 120) : null,
-      newsletter:         hp.newsletter,
-      socialLinksFound:   Object.keys(hp.socialLinks || {}).length,
-      socialNetworks:     Object.keys(hp.socialLinks || {}),
-      homepageTrustBadges: hp.trustBadges?.length ?? 0,
-      navItemCount:       hp.navigation?.length ?? 0,
-      featuredCollections: (hp.featuredCollections || []).slice(0, 5).map(c => c.title),
+      storeSummary,
 
-      // Collections signals
-      collectionsFound:     cols.length,
-      collectionNames:      cols.slice(0, 5).map(c => c.title).filter(Boolean),
-      hasCollectionFilters: cols.some(c => c.filters?.length > 0),
-      filterLabels:         cols.flatMap(c => c.filters || []).slice(0, 10),
-      hasCollectionSorting: cols.some(c => c.sortingOptions?.length > 0),
-      sortOptions:          cols.flatMap(c => c.sortingOptions || []).slice(0, 6),
-
-      // Product signals
-      productsFound: prds.length,
-      productsWithPrice:     prds.filter(p => p.price).length,
-      productsWithReviews:   prds.filter(p => p.reviews?.hasReviews).length,
-      productsWithCompareAt: prds.filter(p => p.compareAtPrice).length,
-      productsWithBuyNow:    prds.filter(p => p.buyNow).length,
-      productsWithStickyATC: prds.filter(p => p.stickyAddToCart).length,
-      // Up to 4 products with key CRO signals
-      productSignals: prds.slice(0, 4).map(p => ({
-        name:          p.name,
-        price:         p.price,
-        compareAt:     p.compareAtPrice,
-        discount:      p.discount,
-        rating:        p.reviews?.rating,
-        reviewCount:   p.reviews?.count,
-        hasReviews:    p.reviews?.hasReviews ?? false,
-        hasDesc:       !!p.description,
-        hasShipping:   p.shippingInfo ?? false,
-        hasReturns:    p.returnPolicy  ?? false,
-        hasAddToCart:  p.addToCart     ?? false,
-        hasBuyNow:     p.buyNow        ?? false,
-        hasSticky:     p.stickyAddToCart ?? false,
-        paymentIcons:  p.paymentIcons?.length ?? 0,
-        trustBadges:   p.trustBadges?.length  ?? 0,
-        imageCount:    p.imageCount    ?? p.images?.length ?? 0,
-        sizes:         (p.sizes || []).slice(0, 5),
-        colors:        (p.colors || []).slice(0, 5),
-      })),
-
-      // Cart signals
-      cart: {
-        type:            cart.cartType,
-        coupon:          cart.couponField       ?? false,
-        shippingCalc:    cart.shippingEstimator ?? false,
-        freeShipBanner:  cart.freeShippingBanner ?? false,
-        upsells:         cart.upsells           ?? false,
-        crossSells:      cart.crossSells        ?? false,
-        expressCheckout: cart.expressCheckout   ?? false,
-        trustBadges:     cart.trustBadges?.length ?? 0,
-        paymentMethods:  cart.paymentMethods     ?? [],
-      },
+      // Pass the list of deterministic opportunities we identified
+      opportunitiesToExplain: (storeData.opportunities || []).map(o => ({
+        id: o.id,
+        issue: o.issue,
+        impact: o.impact,
+        effort: o.effort,
+        category: o.category,
+        pageType: o.pageType
+      }))
     };
 
-    // Recursively truncate all strings to 120 chars
-    const truncate = (obj) => {
-      if (typeof obj === 'string') return obj.slice(0, 120);
-      if (Array.isArray(obj)) return obj.map(truncate);
-      if (obj !== null && typeof obj === 'object') {
-        const newObj = {};
-        for (const key in obj) newObj[key] = truncate(obj[key]);
-        return newObj;
-      }
-      return obj;
-    };
-    
-    const cleanD = truncate(d);
-    
-    // Strict payload size limit check (keep it under ~30KB)
-    let payloadString = JSON.stringify(cleanD);
-    if (payloadString.length > 30000) {
-      console.warn(`[AiAnalyzer] Payload size ${payloadString.length} exceeds 30KB. Truncating optional arrays.`);
-      cleanD.productSignals = cleanD.productSignals.slice(0, 1);
-      cleanD.filterLabels = cleanD.filterLabels.slice(0, 3);
-      payloadString = JSON.stringify(cleanD);
-    }
+    const payloadString = JSON.stringify(cleanD);
 
-    return `Analyze this Shopify store and return a CRO report. Base your analysis ONLY on the actual data provided — do not assume missing features exist. Max 5 opportunities.
+    return `Explain the CRO audit results for this Shopify store. 
+Base your analysis ONLY on the actual data provided below. 
 
-IMPORTANT: Return ONLY valid JSON. No markdown. No code fences. No explanations. One JSON object only.
+Overall CRO Score: ${cleanD.croScore}/100.
+Section Scores Breakdown:
+- Homepage Score: ${cleanD.scoreBreakdown?.homepage?.score}/${cleanD.scoreBreakdown?.homepage?.max}
+- Collections Score: ${cleanD.scoreBreakdown?.collections?.score}/${cleanD.scoreBreakdown?.collections?.max}
+- Product Pages (PDP) Score: ${cleanD.scoreBreakdown?.pdp?.score}/${cleanD.scoreBreakdown?.pdp?.max}
+- Cart Score: ${cleanD.scoreBreakdown?.cart?.score}/${cleanD.scoreBreakdown?.cart?.max}
+- Trust & Social Proof Score: ${cleanD.scoreBreakdown?.trustAndSocial?.score}/${cleanD.scoreBreakdown?.trustAndSocial?.max}
 
-DATA: ${payloadString}
+DATA SUMMARY:
+${payloadString}
 
-RETURN THIS EXACT JSON SCHEMA (replace placeholder values, no extra fields):
-{
-  "executiveSummary": "string",
-  "croScore": number,
-  "analysis": {
-    "homepage": "string",
-    "collections": "string",
-    "pdp": "string",
-    "cart": "string",
-    "trust": "string"
-  },
-  "opportunities": [
+You MUST explain the opportunities list below. Write the evidence explanation and recommendation fields. Do NOT modify the IDs, impact, effort, or issue names.
+
+OPPORTUNITIES TO EXPLAIN:
+${JSON.stringify(cleanD.opportunitiesToExplain)}
+
+    RETURN THIS EXACT JSON SCHEMA (do NOT change the "id" values of opportunities, replace placeholders, no extra fields):
     {
-      "issue": "string",
-      "evidence": "string",
-      "impact": number,
-      "confidence": "High|Medium|Low",
-      "effort": "High|Medium|Low",
-      "recommendation": "string",
-      "expectedLift": "string"
-    }
-  ],
-  "quickWins": ["string"],
-  "highImpactProjects": ["string"]
-}`;
+      "executiveSummary": "Include: Overall CRO score meaning, Strong areas based on crawler evidence, Weak areas based on crawler evidence, Highest priority improvements.",
+      "analysis": {
+        "homepage": "Summarize homepage strengths and weaknesses based on evidence.",
+        "collections": "Summarize collection page filtering and sorting based on evidence.",
+        "pdp": "Summarize product page layout, images, pricing, reviews, and policies based on evidence.",
+        "cart": "Summarize cart flow, upsells, coupon entry, and estimators based on evidence.",
+        "trust": "Summarize reviews, trust badges, payment icons, and security signals based on evidence."
+      },
+      "opportunities": [
+        {
+          "id": "Must match the input opportunity ID exactly.",
+          "title": "Specific improvement title",
+          "category": "Homepage | Collections | Product Pages | Cart | Trust | UX",
+          "evidence": "Exact crawler data supporting this opportunity",
+          "whyItMatters": "Short explanation of why it matters for conversions",
+          "recommendation": "Specific practical action",
+          "impactScore": 4,
+          "confidence": "High | Medium | Low"
+        }
+      ]
+    }`;
   }
 }

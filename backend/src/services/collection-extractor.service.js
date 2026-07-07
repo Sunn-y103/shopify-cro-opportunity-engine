@@ -112,8 +112,22 @@ export class CollectionExtractorService {
       title:        this._extractTitle($, apiRecord),
       description:  apiRecord?.body_html ? this._stripHtml(apiRecord.body_html) : null,
       productCount: this._extractProductCount($, apiRecord),
-      filters:      this._extractFilters($),
-      sortingOptions: this._extractSortingOptions($),
+      filters:          (() => {
+        const list = this._extractFilters($);
+        return {
+          checked: true,
+          detected: list.length > 0,
+          labels: list
+        };
+      })(),
+      sortingOptions:   (() => {
+        const list = this._extractSortingOptions($);
+        return {
+          checked: true,
+          detected: list.length > 0,
+          options: list
+        };
+      })(),
       pagination:   this._extractPagination($),
       products:     this._extractProducts($),
     };

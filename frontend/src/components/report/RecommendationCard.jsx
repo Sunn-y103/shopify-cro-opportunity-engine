@@ -80,11 +80,19 @@ export default function RecommendationCard({ recommendation, index = 0 }) {
         </div>
 
         {/* Action Step */}
-        <div className="flex gap-2.5 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 mb-4 flex-grow">
-          <Lightbulb className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-xs font-bold text-emerald-800 mb-0.5 uppercase tracking-wide">Recommendation</p>
-            <p className="text-sm text-emerald-900 leading-relaxed">{actionStep}</p>
+        <div className="flex flex-col gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-4 mb-4 flex-grow">
+          {recommendation.whyItMatters && (
+            <div>
+              <p className="text-xs font-bold text-emerald-800 mb-1 uppercase tracking-wide">Why It Matters</p>
+              <p className="text-sm text-emerald-900 leading-relaxed">{recommendation.whyItMatters}</p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Lightbulb className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-bold text-emerald-800 mb-1 uppercase tracking-wide">Recommendation</p>
+              <p className="text-sm text-emerald-900 leading-relaxed">{actionStep}</p>
+            </div>
           </div>
         </div>
 

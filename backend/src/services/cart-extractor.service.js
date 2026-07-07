@@ -23,35 +23,48 @@ export class CartExtractorService {
         CrawlerService.crawl(cartUrl),
       ]);
 
-      let cart$ = null;
-      let cartHtml = '';
-      // To save memory, we don't re-crawl or re-parse the homepage into Cheerio.
-      // We rely on string-based detection on homeHtml and the dedicated cart page.
-      let home$ = null;
-
-      if (cartPageResult.status === 'fulfilled') {
-        cart$    = cartPageResult.value.$;
-        cartHtml = cartPageResult.value.html || '';
-      }
-
+      const isCartCrawled = (cartPageResult.status === 'fulfilled');
+      const cart$ = isCartCrawled ? cartPageResult.value.$ : null;
+      const cartHtml = isCartCrawled ? (cartPageResult.value.html || '') : '';
+      const home$ = null;
       const $ = cart$;
       
       const result = {
         url:              cartUrl,
         cartType:         this._detectCartType(cart$, home$, cartHtml, homeHtml),
-        couponField:      $ ? this._hasCouponField($) : false,
-        shippingEstimator: $ ? this._hasShippingEstimator($) : false,
-        freeShippingBanner: $ ? this._hasFreeShippingBanner($) : false,
-        upsells:          $ ? this._hasRecommendations($, ['upsell', 'frequently bought', 'complete the look', 'bundle']) : false,
-        crossSells:       $ ? this._hasRecommendations($, ['cross', 'recommend', 'also like', 'may also']) : false,
-        trustBadges:      $ ? this._extractTrustBadges($) : [],
-        paymentMethods:   $ ? this._extractPaymentMethods($) : [],
+        couponField:      {
+          checked: isCartCrawled,
+          detected: isCartCrawled && $ ? !!this._hasCouponField($) : false
+        },
+        shippingEstimator: {
+          checked: isCartCrawled,
+          detected: isCartCrawled && $ ? !!this._hasShippingEstimator($) : false
+        },
+        freeShippingBanner: {
+          checked: isCartCrawled,
+          detected: isCartCrawled && $ ? !!this._hasFreeShippingBanner($) : false
+        },
+        upsells:          {
+          checked: isCartCrawled,
+          detected: isCartCrawled && $ ? !!this._hasRecommendations($, ['upsell', 'frequently bought', 'complete the look', 'bundle']) : false
+        },
+        crossSells:       {
+          checked: isCartCrawled,
+          detected: isCartCrawled && $ ? !!this._hasRecommendations($, ['cross', 'recommend', 'also like', 'may also']) : false
+        },
+        trustBadges:      {
+          checked: isCartCrawled,
+          detected: isCartCrawled && $ ? this._extractTrustBadges($).length > 0 : false,
+          badges: isCartCrawled && $ ? this._extractTrustBadges($) : []
+        },
+        paymentMethods:   {
+          checked: isCartCrawled,
+          detected: isCartCrawled && $ ? this._extractPaymentMethods($).length > 0 : false,
+          methods: isCartCrawled && $ ? this._extractPaymentMethods($) : []
+        },
         expressCheckout:  $ ? this._hasExpressCheckout($, homeHtml) : false,
       };
 
-      // Clear memory
-      cart$ = null;
-      
       return result;
 
     } catch (error) {

@@ -87,8 +87,21 @@ export async function callOpenRouter(systemPrompt, userPrompt, label = 'OpenRout
         model,
         messages,
         temperature: 0, // Lower temperature to 0 for maximum determinism (per user request)
-        response_format: { type: "json_object" } // Strongly enforce JSON
+        response_format: { type: "json_object" }, // Strongly enforce JSON
+        max_tokens: 1500 // Enforce sensible token output limit to prevent Render memory/timeout issues
       };
+
+      const systemPromptBytes = Buffer.byteLength(systemPrompt, 'utf8');
+      const userPromptBytes = Buffer.byteLength(userPrompt, 'utf8');
+      const totalPayloadBytes = systemPromptBytes + userPromptBytes;
+      const estimatedPromptTokens = Math.round((systemPrompt.length + userPrompt.length) / 4);
+
+      console.log(`\n┌─ ${label} Request Payload Details ──────────────────────────`);
+      console.log(`│ Total Payload size : ${totalPayloadBytes} bytes`);
+      console.log(`│ Est. Prompt tokens : ${estimatedPromptTokens}`);
+      console.log(`│ Current Attempt    : ${attempt}`);
+      console.log(`│ Retry count        : ${attempt - 1}`);
+      console.log(`└──────────────────────────────────────────────────`);
 
       const response = await openai.chat.completions.create(requestPayload);
       const elapsed = Date.now() - startTime;

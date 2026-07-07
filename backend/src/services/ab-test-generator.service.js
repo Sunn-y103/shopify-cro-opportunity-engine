@@ -18,12 +18,17 @@ export class AbTestGeneratorService {
       .slice(0, 3);
 
     const systemPrompt = [
-      'You are a Shopify CRO experiment designer.',
+      'You are a strict Shopify CRO experiment designer.',
       'You MUST return ONLY valid JSON.',
       'Do not include markdown. Do not include code fences. Do not include explanations.',
-      'Do not omit commas or braces.',
-      'Return exactly one JSON object.',
-      'All string values must be 120 characters or fewer.',
+      'RULES:',
+      '1. EVIDENCE REQUIREMENT: Every A/B test must originate directly from detected crawler data. Do not generate generic CRO tests without crawler evidence.',
+      '2. NO FAKE LIFT PERCENTAGES: Do not generate "Expected Lift: 2-4%" or any percentage improvement predictions. Use "Low", "Medium", or "High" for expectedImpact.',
+      '3. NO UNSUPPORTED CLAIMS: Avoid causal claims (e.g., instead of "Payment icons increase conversions", write "Payment icons can improve checkout transparency"). Do not use "increase conversion rates", "boost sales", "increase revenue", or "improve AOV" unless backed by actual data. Frame hypotheses around reducing friction, improving usability, product discovery, and trust (e.g., "reduces purchase friction", "improves checkout transparency").',
+      '4. UNKNOWN DATA HANDLING: Unknown does not mean missing. If data is unknown or not verified, do not assume it is a problem. State "Insufficient data available for evaluation." if needed. Do not treat unknown cart data as a failed score. Only mention missing features if explicitly detected as NO.',
+      '5. GENERAL RULES: Unknown ≠ Missing. Missing ≠ Failed. Only mention features explicitly available in crawler data. Avoid absolute statements like "Best performing store", "Strong brand identity", "Innovative company", or "Premium experience". Never include brand positioning, marketing claims, or business assumptions. Use phrases like "Not detected from available crawl data" or "Could not be verified from available crawl data".',
+      '6. PROFESSIONAL FOCUS: Focus on reducing friction, improving usability, discovery, and trust clarity.',
+      'Return exactly one JSON object.'
     ].join(' ');
 
     const userPrompt = this._buildPrompt(topOpportunities);
@@ -52,16 +57,14 @@ RETURN THIS EXACT JSON SCHEMA (replace placeholder values, no extra fields):
 {
   "experiments": [
     {
-      "opportunityIssue": "string (must exactly match the issue title from input)",
-      "hypothesis": "string (If X, then Y, because Z)",
-      "whyItMatters": "string (psychological or UX impact explanation)",
-      "implementation": "string (step-by-step setup guide)",
-      "primaryKpi": "string (e.g. Add to Cart Rate)",
-      "secondaryKpi": "string (e.g. Bounce Rate or AOV)",
-      "expectedLift": "string (e.g. 2-4%)",
-      "confidence": "High|Medium|Low",
-      "priority": "High|Medium|Low",
-      "estimatedEffort": "string (e.g. 1-2 hours (Low) or Developer required (High))"
+      "title": "Experiment name",
+      "hypothesis": "If X is changed, then Y user behavior may improve because Z",
+      "evidence": "Exact crawler evidence supporting this test (e.g. Filters = NO)",
+      "primaryMetric": "Metric to measure (e.g. Add to Cart Rate)",
+      "secondaryMetric": "Additional metric (e.g. Bounce Rate)",
+      "expectedImpact": "Low | Medium | High",
+      "effort": "Low | Medium | High",
+      "implementation": "Practical implementation steps"
     }
   ]
 }`;

@@ -4,6 +4,7 @@ import { CollectionExtractorService } from './collection-extractor.service.js';
 import { ProductExtractorService } from './product-extractor.service.js';
 import { CartExtractorService } from './cart-extractor.service.js';
 import { ShopifyDetectorService } from './shopify-detector.service.js';
+import { opportunityCatalog } from '../utils/opportunity-catalog.js';
 
 export class StoreScraperService {
   /**
@@ -30,22 +31,22 @@ export class StoreScraperService {
         featuredProducts: [],
         navigation: [],
         footer: [],
-        newsletter: { exists: false, hasIncentive: false },
+        newsletter: { checked: false, detected: false, exists: false, hasIncentive: false },
         socialLinks: {},
-        trustBadges: []
+        trustBadges: { checked: false, detected: false, badges: [] }
       },
       collections: [],
       products: [],
       cart: {
         url: null,
         cartType: 'Unknown',
-        couponField: false,
-        shippingEstimator: false,
-        freeShippingBanner: false,
-        upsells: false,
-        crossSells: false,
-        trustBadges: [],
-        paymentMethods: [],
+        couponField: { checked: false, detected: false },
+        shippingEstimator: { checked: false, detected: false },
+        freeShippingBanner: { checked: false, detected: false },
+        upsells: { checked: false, detected: false },
+        crossSells: { checked: false, detected: false },
+        trustBadges: { checked: false, detected: false, badges: [] },
+        paymentMethods: { checked: false, detected: false, methods: [] },
         expressCheckout: false
       },
       errors: [] // Track what failed for debugging
@@ -141,6 +142,56 @@ export class StoreScraperService {
     output.croScore = scoreObj.croScore;
     output.scoreBreakdown = scoreObj.breakdown;
 
+    // Determine confidence level
+    const extractionQualityScore = output.extractionQuality?.score || 0;
+    const pagesCrawledCount = output.diagnostics?.pagesCrawled?.length || 0;
+    let storeConfidence = 'Low';
+    if (extractionQualityScore >= 80 && pagesCrawledCount >= 3) {
+      storeConfidence = 'High';
+    } else if (extractionQualityScore >= 60 && pagesCrawledCount >= 2) {
+      storeConfidence = 'Medium';
+    }
+
+    // Evaluate catalog
+    const triggeredOpps = [];
+    for (const opp of opportunityCatalog) {
+      try {
+        if (opp.testTrigger(output)) {
+          // Compute priority based on impact + effort
+          let priority = 'Medium';
+          const effortLower = opp.effort.toLowerCase();
+          if (opp.impact >= 4) {
+            priority = (effortLower === 'low' || effortLower === 'medium') ? 'High' : 'Medium';
+          } else if (opp.impact <= 2) {
+            priority = 'Low';
+          }
+
+          triggeredOpps.push({
+            id: opp.id,
+            issue: opp.issue,
+            impact: opp.impact,
+            confidence: storeConfidence,
+            effort: opp.effort,
+            priority,
+            category: opp.category,
+            pageType: opp.pageType,
+            verified: true,
+            evidence: '', // to be filled by LLM
+            recommendation: '', // to be filled by LLM
+            expectedLift: '' // to be filled by LLM
+          });
+        }
+      } catch (err) {
+        console.warn(`[StoreScraperService] Error evaluating trigger for ${opp.id}: ${err.message}`);
+      }
+    }
+
+    // Sort opportunities by impact descending
+    triggeredOpps.sort((a, b) => b.impact - a.impact);
+
+    // Limit to between 3 and 8 opportunities (dynamic limits)
+    output.opportunities = triggeredOpps.slice(0, 8);
+
     // 5. Post-scrape validation warnings
     this._validateAndWarn(output);
 
@@ -164,11 +215,11 @@ export class StoreScraperService {
       { name: 'CTA Button', passed: !!hp.hero?.cta?.text },
       { name: 'Navigation Menu', passed: hp.navigation?.length > 0 },
       { name: 'Collections Found', passed: cols.length > 0 },
-      { name: 'Collection Filters', passed: cols.some(c => c.filters?.length > 0) },
+      { name: 'Collection Filters', passed: cols.some(c => c.filters?.detected ?? (c.filters?.length > 0)) },
       { name: 'Product Title', passed: prds.some(p => p.name) },
       { name: 'Product Price', passed: prds.some(p => p.price) },
       { name: 'Product Images', passed: prds.some(p => p.imageCount > 0 || (p.images && p.images.length > 0)) },
-      { name: 'Product Reviews', passed: prds.some(p => p.reviews?.hasReviews) },
+      { name: 'Product Reviews', passed: prds.some(p => p.reviews?.detected ?? p.reviews?.hasReviews) },
       { name: 'Cart Accessibility', passed: (cart.cartType && cart.cartType !== 'Unknown') }
     ];
 
@@ -202,29 +253,40 @@ export class StoreScraperService {
     // 2. Collections (max 20)
     let collectionsScore = 0;
     if (cols.length > 0) collectionsScore += 8;
-    if (cols.some(c => c.filters?.length > 0)) collectionsScore += 6;
-    if (cols.some(c => c.sortingOptions?.length > 0)) collectionsScore += 6;
+    if (cols.some(c => c.filters?.detected ?? (c.filters?.length > 0))) collectionsScore += 6;
+    if (cols.some(c => c.sortingOptions?.detected ?? (c.sortingOptions?.length > 0))) collectionsScore += 6;
 
     // 3. PDP (max 25)
     let pdpScore = 0;
     if (prds.some(p => p.price)) pdpScore += 5;
-    if (prds.some(p => p.buyNow)) pdpScore += 5;
-    if (prds.some(p => p.addToCart)) pdpScore += 5;
-    if (prds.some(p => p.stickyAddToCart)) pdpScore += 5;
+    if (prds.some(p => p.buyNow?.detected ?? p.buyNow)) pdpScore += 5;
+    if (prds.some(p => p.addToCart?.detected ?? p.addToCart)) pdpScore += 5;
+    if (prds.some(p => p.stickyAddToCart?.detected ?? p.stickyAddToCart)) pdpScore += 5;
     if (prds.some(p => p.imageCount > 0 || (p.images && p.images.length > 0))) pdpScore += 5;
 
     // 4. Cart (max 20)
     let cartScore = 0;
-    if (cart.couponField) cartScore += 4;
-    if (cart.shippingEstimator) cartScore += 4;
-    if (cart.freeShippingBanner) cartScore += 4;
-    if (cart.expressCheckout) cartScore += 4;
-    if (cart.upsells || cart.crossSells) cartScore += 4;
+    const hasCoupon = cart.couponField?.detected ?? cart.couponField;
+    const hasShippingEstimator = cart.shippingEstimator?.detected ?? cart.shippingEstimator;
+    const hasFreeShippingBanner = cart.freeShippingBanner?.detected ?? cart.freeShippingBanner;
+    const hasExpressCheckout = cart.expressCheckout?.detected ?? cart.expressCheckout;
+    const hasUpsells = (cart.upsells?.detected ?? cart.upsells) || (cart.crossSells?.detected ?? cart.crossSells);
+
+    if (hasCoupon) cartScore += 4;
+    if (hasShippingEstimator) cartScore += 4;
+    if (hasFreeShippingBanner) cartScore += 4;
+    if (hasExpressCheckout) cartScore += 4;
+    if (hasUpsells) cartScore += 4;
 
     // 5. Trust & Social Proof (max 15)
     let trustScore = 0;
-    if (prds.some(p => p.reviews?.hasReviews)) trustScore += 5;
-    if (hp.trustBadges?.length > 0 || cart.trustBadges?.length > 0 || prds.some(p => p.trustBadges?.length > 0)) trustScore += 5;
+    if (prds.some(p => p.reviews?.detected ?? p.reviews?.hasReviews)) trustScore += 5;
+
+    const hasHpTrust = hp.trustBadges?.detected ?? (hp.trustBadges?.length > 0);
+    const hasCartTrust = cart.trustBadges?.detected ?? (cart.trustBadges?.length > 0);
+    const hasPdpTrust = prds.some(p => p.trustBadges?.detected ?? (p.trustBadges?.length > 0));
+    if (hasHpTrust || hasCartTrust || hasPdpTrust) trustScore += 5;
+
     if (hp.socialLinks && Object.keys(hp.socialLinks).length > 0) trustScore += 5;
 
     const total = homepageScore + collectionsScore + pdpScore + cartScore + trustScore;
@@ -266,10 +328,10 @@ export class StoreScraperService {
       blogs: 0,
       productsAnalyzed: prds.length,
       collectionsAnalyzed: cols.length,
-      imagesFound: (hp.trustBadges?.length || 0) + prds.reduce((sum, p) => sum + (p.imageCount || p.images?.length || 0), 0) + (hp.featuredProducts?.length || 0),
-      reviewsFound: prds.filter(p => p.reviews?.hasReviews).length,
+      imagesFound: (hp.trustBadges?.badges?.length || hp.trustBadges?.length || 0) + prds.reduce((sum, p) => sum + (p.imageCount || p.images?.length || 0), 0) + (hp.featuredProducts?.length || 0),
+      reviewsFound: prds.filter(p => p.reviews?.detected ?? p.reviews?.hasReviews).length,
       ratingsFound: prds.filter(p => p.reviews?.rating).length,
-      trustBadgesFound: (hp.trustBadges?.length || 0) + (cart.trustBadges?.length || 0) + prds.reduce((sum, p) => sum + (p.trustBadges?.length || 0), 0),
+      trustBadgesFound: (hp.trustBadges?.badges?.length || hp.trustBadges?.length || 0) + (cart.trustBadges?.badges?.length || cart.trustBadges?.length || 0) + prds.reduce((sum, p) => sum + (p.trustBadges?.badges?.length || p.trustBadges?.length || 0), 0),
       navigationDetected: hp.navigation?.length > 0
     };
   }
@@ -325,7 +387,8 @@ export class StoreScraperService {
     if (!output.homepage?.socialLinks || Object.keys(output.homepage.socialLinks).length === 0) {
       warnings.push('⚠  No social links detected — links may be SVG-only or loaded via JS');
     }
-    if (!output.homepage?.newsletter?.exists) {
+    const hasNewsletter = output.homepage?.newsletter?.detected ?? output.homepage?.newsletter?.exists;
+    if (!hasNewsletter) {
       warnings.push('⚠  No newsletter form detected — may be loaded client-side');
     }
 
@@ -344,14 +407,18 @@ export class StoreScraperService {
     const hp    = output.homepage    || {};
     const cart  = output.cart        || {};
 
-    const filtersTotal  = cols.reduce((sum, c) => sum + (c.filters?.length ?? 0), 0);
-    const sortingTotal  = cols.reduce((sum, c) => sum + (c.sortingOptions?.length ?? 0), 0);
+    const filtersTotal  = cols.reduce((sum, c) => sum + (c.filters?.labels?.length ?? c.filters?.length ?? 0), 0);
+    const sortingTotal  = cols.reduce((sum, c) => sum + (c.sortingOptions?.options?.length ?? c.sortingOptions?.length ?? 0), 0);
     const pricesCount   = prods.filter(p => p.price).length;
     const ratingsCount  = prods.filter(p => p.reviews?.rating).length;
-    const reviewsCount  = prods.filter(p => p.reviews?.hasReviews).length;
+    const reviewsCount  = prods.filter(p => p.reviews?.detected ?? p.reviews?.hasReviews).length;
 
     const heroHeading   = hp.hero?.heading;
     const heroTrunc     = heroHeading ? `"${heroHeading.slice(0, 50)}${heroHeading.length > 50 ? '…' : ''}"` : 'not found';
+
+    const hasNewsletter = hp.newsletter?.detected ?? hp.newsletter?.exists;
+    const hpBadgesCount = hp.trustBadges?.badges?.length ?? hp.trustBadges?.length ?? 0;
+    const cartBadgesCount = cart.trustBadges?.badges?.length ?? cart.trustBadges?.length ?? 0;
 
     console.log('\n========== SCRAPED STORE SUMMARY ==========');
     console.log(`Store : ${baseUrl}`);
@@ -362,8 +429,8 @@ export class StoreScraperService {
     console.log(`  - Subheading Found  : ${hp.hero?.subheading ? 'YES' : 'NO'}`);
     console.log(`  - CTA Found         : ${hp.hero?.cta ? 'YES' : 'NO'}  ${hp.hero?.cta?.text ? `("${hp.hero.cta.text}")` : ''}`);
     console.log(`  - Announcement Bar  : ${hp.announcementBar ? 'YES' : 'NO'}`);
-    console.log(`  - Newsletter        : ${hp.newsletter?.exists ? 'YES' : 'NO'}${hp.newsletter?.hasIncentive ? ' (with incentive)' : ''}`);
-    console.log(`  - Trust Badges      : ${hp.trustBadges?.length ?? 0} found`);
+    console.log(`  - Newsletter        : ${hasNewsletter ? 'YES' : 'NO'}${hp.newsletter?.hasIncentive ? ' (with incentive)' : ''}`);
+    console.log(`  - Trust Badges      : ${hpBadgesCount} found`);
     console.log(`  - Social Links      : ${Object.keys(hp.socialLinks || {}).length} found  ${Object.keys(hp.socialLinks || {}).join(', ') || ''}`);
     console.log(`  - Featured Colls.   : ${hp.featuredCollections?.length ?? 0}`);
     console.log(`  - Featured Products : ${hp.featuredProducts?.length ?? 0}`);
@@ -371,27 +438,27 @@ export class StoreScraperService {
     console.log('');
     console.log('Collections:');
     console.log(`  - Count             : ${cols.length}`);
-    console.log(`  - Filters           : ${filtersTotal > 0 ? 'YES' : 'NO'}  (${filtersTotal} labels across ${cols.filter(c => c.filters?.length > 0).length} collections)`);
-    console.log(`  - Sorting           : ${sortingTotal > 0 ? 'YES' : 'NO'}  (${sortingTotal} options across ${cols.filter(c => c.sortingOptions?.length > 0).length} collections)`);
+    console.log(`  - Filters           : ${filtersTotal > 0 ? 'YES' : 'NO'}  (${filtersTotal} labels across ${cols.filter(c => (c.filters?.labels?.length ?? c.filters?.length ?? 0) > 0).length} collections)`);
+    console.log(`  - Sorting           : ${sortingTotal > 0 ? 'YES' : 'NO'}  (${sortingTotal} options across ${cols.filter(c => (c.sortingOptions?.options?.length ?? c.sortingOptions?.length ?? 0) > 0).length} collections)`);
     console.log('');
     console.log('Products:');
     console.log(`  - Count             : ${prods.length}`);
     console.log(`  - With Price        : ${pricesCount}`);
     console.log(`  - With Rating       : ${ratingsCount}`);
     console.log(`  - With Reviews      : ${reviewsCount}`);
-    console.log(`  - With Buy Now      : ${prods.filter(p => p.buyNow).length}`);
-    console.log(`  - With Sticky ATC   : ${prods.filter(p => p.stickyAddToCart).length}`);
-    console.log(`  - With Trust Badges : ${prods.filter(p => p.trustBadges?.length > 0).length}`);
+    console.log(`  - With Buy Now      : ${prods.filter(p => p.buyNow?.detected ?? p.buyNow).length}`);
+    console.log(`  - With Sticky ATC   : ${prods.filter(p => p.stickyAddToCart?.detected ?? p.stickyAddToCart).length}`);
+    console.log(`  - With Trust Badges : ${prods.filter(p => p.trustBadges?.badges?.length ?? p.trustBadges?.length ?? 0).length}`);
     console.log('');
     console.log('Cart:');
     console.log(`  - Type              : ${cart.cartType ?? 'Unknown'}`);
-    console.log(`  - Coupon Field      : ${cart.couponField ? 'YES' : 'NO'}`);
-    console.log(`  - Shipping Calc     : ${cart.shippingEstimator ? 'YES' : 'NO'}`);
-    console.log(`  - Free Ship Banner  : ${cart.freeShippingBanner ? 'YES' : 'NO'}`);
-    console.log(`  - Upsells           : ${cart.upsells ? 'YES' : 'NO'}`);
-    console.log(`  - Cross-sells       : ${cart.crossSells ? 'YES' : 'NO'}`);
-    console.log(`  - Express Checkout  : ${cart.expressCheckout ? 'YES' : 'NO'}`);
-    console.log(`  - Trust Badges      : ${cart.trustBadges?.length ?? 0}`);
+    console.log(`  - Coupon Field      : ${cart.couponField?.detected ?? cart.couponField ? 'YES' : 'NO'}`);
+    console.log(`  - Shipping Calc     : ${cart.shippingEstimator?.detected ?? cart.shippingEstimator ? 'YES' : 'NO'}`);
+    console.log(`  - Free Ship Banner  : ${cart.freeShippingBanner?.detected ?? cart.freeShippingBanner ? 'YES' : 'NO'}`);
+    console.log(`  - Upsells           : ${cart.upsells?.detected ?? cart.upsells ? 'YES' : 'NO'}`);
+    console.log(`  - Cross-sells       : ${cart.crossSells?.detected ?? cart.crossSells ? 'YES' : 'NO'}`);
+    console.log(`  - Express Checkout  : ${cart.expressCheckout?.detected ?? cart.expressCheckout ? 'YES' : 'NO'}`);
+    console.log(`  - Trust Badges      : ${cartBadgesCount}`);
     console.log('');
     if (output.errors.length > 0) {
       console.log('Errors:');

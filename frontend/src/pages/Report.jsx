@@ -85,7 +85,10 @@ function AnalysisPanel({ title, content }) {
 function AbTestCard({ experiment, index }) {
   const [open, setOpen] = useState(false)
   if (!experiment) return null
-  const priorityVariant = experiment.priority?.toLowerCase() === 'high' ? 'error' : experiment.priority?.toLowerCase() === 'medium' ? 'warning' : 'success'
+  
+  const impactLower = (experiment.expectedImpact || '').toLowerCase()
+  const impactVariant = impactLower === 'high' ? 'success' : impactLower === 'medium' ? 'warning' : 'default'
+
   return (
     <article
       className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
@@ -93,28 +96,20 @@ function AbTestCard({ experiment, index }) {
     >
       <div className="p-6">
         <div className="flex items-center justify-between mb-2">
-          <Badge variant={priorityVariant} label={`Priority: ${experiment.priority || 'Medium'}`} size="sm" />
-          <Badge variant="confidence-high" label={experiment.confidence || 'Medium'} size="sm" />
+          <Badge variant={impactVariant} label={`Impact: ${experiment.expectedImpact || 'Medium'}`} size="sm" />
+          <Badge variant="default" label={`Effort: ${experiment.effort || 'Medium'}`} size="sm" />
         </div>
-        <h3 className="text-base font-bold text-gray-900 mb-1 mt-2">{experiment.opportunityIssue}</h3>
+        <h3 className="text-base font-bold text-gray-900 mb-1 mt-2">{experiment.title || experiment.opportunityIssue}</h3>
         <p className="text-xs text-gray-500 italic mb-4">{experiment.hypothesis}</p>
 
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-gray-50 rounded-lg px-3 py-2.5">
-            <p className="text-xs text-gray-400 mb-0.5">Primary KPI</p>
-            <p className="text-xs font-semibold text-gray-800">{experiment.primaryKpi}</p>
+            <p className="text-xs text-gray-400 mb-0.5">Primary Metric</p>
+            <p className="text-xs font-semibold text-gray-800">{experiment.primaryMetric}</p>
           </div>
           <div className="bg-gray-50 rounded-lg px-3 py-2.5">
-            <p className="text-xs text-gray-400 mb-0.5">Expected Lift</p>
-            <p className="text-xs font-semibold text-emerald-700">{experiment.expectedLift}</p>
-          </div>
-          <div className="bg-gray-50 rounded-lg px-3 py-2.5">
-            <p className="text-xs text-gray-400 mb-0.5">Secondary KPI</p>
-            <p className="text-xs font-semibold text-gray-800">{experiment.secondaryKpi}</p>
-          </div>
-          <div className="bg-gray-50 rounded-lg px-3 py-2.5">
-            <p className="text-xs text-gray-400 mb-0.5">Effort</p>
-            <p className="text-xs font-semibold text-gray-800">{experiment.estimatedEffort}</p>
+            <p className="text-xs text-gray-400 mb-0.5">Secondary Metric</p>
+            <p className="text-xs font-semibold text-gray-800">{experiment.secondaryMetric}</p>
           </div>
         </div>
 
@@ -124,14 +119,18 @@ function AbTestCard({ experiment, index }) {
           className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-800 transition-colors"
         >
           {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          {open ? 'Hide Implementation' : 'View Implementation'}
+          {open ? 'Hide Details' : 'View Details'}
         </button>
         {open && (
-          <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5">
-            <p className="text-xs font-bold text-emerald-800 mb-1 uppercase tracking-wide">Why It Matters</p>
-            <p className="text-xs text-emerald-900 leading-relaxed mb-3">{experiment.whyItMatters}</p>
-            <p className="text-xs font-bold text-emerald-800 mb-1 uppercase tracking-wide">Implementation</p>
-            <p className="text-xs text-emerald-900 leading-relaxed whitespace-pre-line">{experiment.implementation}</p>
+          <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 flex flex-col gap-3">
+            <div>
+              <p className="text-[10px] font-bold text-emerald-800 mb-1 uppercase tracking-wide">Crawler Evidence</p>
+              <p className="text-xs text-emerald-900 leading-relaxed">{experiment.evidence}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-emerald-800 mb-1 uppercase tracking-wide">Implementation</p>
+              <p className="text-xs text-emerald-900 leading-relaxed whitespace-pre-line">{experiment.implementation}</p>
+            </div>
           </div>
         )}
       </div>
@@ -152,8 +151,8 @@ function ComparisonReport({ report, activeTab }) {
   ]
 
   const winnerBadge = (winner) => {
-    if (winner === 'A') return <Badge variant="success" label="Your Store Wins" size="sm" />
-    if (winner === 'B') return <Badge variant="error" label="Competitor Wins" size="sm" />
+    if (winner === 'A') return <Badge variant="success" label="Advantage: Your Store" size="sm" />
+    if (winner === 'B') return <Badge variant="error" label="Advantage: Competitor" size="sm" />
     return <Badge variant="default" label="Tie" size="sm" />
   }
 
@@ -206,19 +205,34 @@ function ComparisonReport({ report, activeTab }) {
           {report.opportunitiesForA?.length > 0 && (
             <div>
               <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-amber-500" /> Opportunities to Beat the Competition
+                <Trophy className="w-5 h-5 text-amber-500" /> Opportunities
               </h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {report.opportunitiesForA.map((opp, i) => (
                   <div key={i} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                     <div className="flex items-center justify-between mb-2">
-                      <Badge variant={opp.impact >= 4 ? 'impact-high' : 'impact-medium'} label={`Impact: ${Math.round(opp.impact)}/5`} size="sm" />
+                      <div className="flex gap-2 items-center">
+                        <Badge variant={opp.impact >= 4 ? 'impact-high' : 'impact-medium'} label={`Impact: ${Math.round(opp.impact)}/5`} size="sm" />
+                        <Badge variant="default" label={`Effort: ${opp.effort || 'Low'}`} size="sm" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">{opp.category || 'UX'}</span>
                     </div>
-                    <h4 className="text-sm font-bold text-gray-900 mb-2">{opp.issue}</h4>
+                    <h4 className="text-sm font-bold text-gray-900 mb-2">{opp.issue || opp.title}</h4>
                     <p className="text-xs text-gray-500 mb-3 leading-relaxed">{opp.evidence}</p>
-                    <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex gap-2">
-                      <Lightbulb className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-emerald-900 leading-relaxed">{opp.recommendation}</p>
+                    <div className="flex flex-col gap-3 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                      {opp.whyItMatters && (
+                        <div>
+                          <p className="text-[10px] font-bold text-emerald-800 mb-0.5 uppercase tracking-wide">Why It Matters</p>
+                          <p className="text-xs text-emerald-900 leading-relaxed">{opp.whyItMatters}</p>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <Lightbulb className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-[10px] font-bold text-emerald-800 mb-0.5 uppercase tracking-wide">Recommendation</p>
+                          <p className="text-xs text-emerald-900 leading-relaxed">{opp.recommendation}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}

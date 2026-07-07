@@ -141,15 +141,58 @@ export class ProductExtractorService {
       variants:       this._extractVariants($, scriptJson),
       sizes:          this._extractSizes($, scriptJson),
       colors:         this._extractColors($, scriptJson),
-      reviews:        this._extractReviews($, jsonLdProduct),
+      reviews:          (() => {
+        const raw = this._extractReviews($, jsonLdProduct);
+        return {
+          checked: true,
+          detected: !!raw.hasReviews,
+          hasReviews: !!raw.hasReviews,
+          rating: raw.rating,
+          count: raw.count
+        };
+      })(),
       description:    this._extractDescription($, jsonLdProduct),
-      shippingInfo:   this._extractPolicy($, ['shipping', 'delivery']),
-      returnPolicy:   this._extractPolicy($, ['return', 'refund', 'exchange']),
+      shippingInfo:     (() => {
+        const text = this._extractPolicy($, ['shipping', 'delivery']);
+        return {
+          checked: true,
+          detected: !!text,
+          value: text
+        };
+      })(),
+      returnPolicy:     (() => {
+        const text = this._extractPolicy($, ['return', 'refund', 'exchange']);
+        return {
+          checked: true,
+          detected: !!text,
+          value: text
+        };
+      })(),
       addToCart:      this._hasAddToCart($),
       buyNow:         this._hasBuyNow($),
-      stickyAddToCart: this._hasStickyAddToCart($),
-      paymentIcons:   this._extractPaymentIcons($),
-      trustBadges:    this._extractTrustBadges($),
+      stickyAddToCart:  (() => {
+        const val = this._hasStickyAddToCart($);
+        return {
+          checked: true,
+          detected: !!val
+        };
+      })(),
+      paymentIcons:     (() => {
+        const list = this._extractPaymentIcons($);
+        return {
+          checked: true,
+          detected: list.length > 0,
+          icons: list
+        };
+      })(),
+      trustBadges:      (() => {
+        const list = this._extractTrustBadges($);
+        return {
+          checked: true,
+          detected: list.length > 0,
+          badges: list
+        };
+      })(),
       relatedProducts: this._extractRelatedProducts($),
     };
   }
